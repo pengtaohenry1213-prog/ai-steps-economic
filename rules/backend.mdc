@@ -1,0 +1,58 @@
+---
+description: 后端开发相关的任务，包括 Node.js/Express/TypeScript 服务开发、API 设计、数据库操作、中间件编写、安全配置、Express 服务及 Monorepo packages/backend 目录下的开发工作。
+glob: ["packages/backend/**/*"]
+alwaysApply: false
+---
+# 后端（Node / Express + TypeScript，角色约束）
+
+## 规范约定（引用）
+
+- 全局与 Node 分层、行数与目录：`.my-rules/规范/AI_Coding_Style.md`（核心业务单文件建议 ≤200 行；同目录文件建议 ≤8；配置/脚本宜保持更短片段便于审阅）。
+- 流程与红线：`rules/SpecCoding.mdc`。
+
+## 分层（硬约束）
+
+- **api / routes**：参数解析、鉴权钩子、HTTP 映射；不写复杂业务分支；**路由嵌套不超过 2 层**，按业务域拆文件优先。
+- **service**：业务编排、事务边界（若适用）；**不直接访问数据库**，数据读写经 **model / repository**（或项目等价数据访问层）。
+- **model / repository**：持久化与查询；无业务规则分叉。
+- **middleware**：单一职责；可组合。
+
+目录示例（落地后端时）：`packages/server/src/{api,middleware,service,model,utils,config,constant}` + 共享类型 `packages/shared`；以实际仓库为准。
+
+## HTTP 与业务体
+
+- REST 习惯 + **路径版本**（如 `/api/v1/...`），版本策略与前端/网关文档一致。
+- 业务 JSON 体与前端约定统一，通常为 `{ code, msg, data }`（`code === 0` 表示成功）；**具体字段与错误码表**放在接口文档或 `shared` 类型定义，不在本规则维护副本。
+
+## 安全与配置
+
+- 密钥与连接串仅环境变量或密钥管理服务；禁止写入仓库。
+- 入参**必须**校验（Joi / Zod 等选项目既定库）；对外错误信息对用户友好、对内部可查日志。
+- **CORS**：禁止 `Access-Control-Allow-Origin: *`，须按环境配置白名单域名。
+- **高并发 / 敏感接口**：设计限流（如按 IP 或用户标识）；具体策略见安全或接口文档。
+- **权限**：接口级鉴权与角色/权限模型（如 RBAC）以**安全设计文档**为准，避免在路由内散落重复判断。
+- **HTTP 超时**：对外提供接口时应有超时与资源上限（常见约定约 30s 量级，以网关与服务能力为准）。
+- 日志用结构化日志库；禁止将密码、完整 Token 打进日志。
+
+## 异步与错误
+
+- I/O 使用 async/await；未处理 Promise 拒绝视为缺陷。
+- 全局错误中间件或等价机制将异常映射为统一响应结构。
+
+## 常见坏味道（触发即改）
+
+| 症状 | 处理 |
+|------|------|
+| 路由里堆业务 | 下沉 service |
+| 循环内逐条打库 | 批量或改写查询 |
+| `console.log` 当异常处理 | 统一日志 + 业务错误码 |
+| 配置写死在源码 | 配置与环境分离 |
+
+## 不需要写进本规则的
+
+- Winston/Pino/PM2/Docker 的入门教程与冗长命令清单。
+- JWT 具体天数、加密算法细节——以**项目安全设计文档**为准。
+
+## 归档（长版）
+
+详见 `.my-rules/backend.md`。
