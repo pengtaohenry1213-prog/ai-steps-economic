@@ -10,7 +10,7 @@ function validateFilePath(path, size = 0) {
   const isPathTraversal = /\.\./.test(normalizedPath);
   const isSystemPathAbsolute = /^\/(etc|root|sys|proc)\//.test(normalizedPath);
   const isSystemPathRelative = /\.\.\/(etc|root|sys|proc)\//.test(normalizedPath);
-  const isSensitive = /\.(env|pem|key|credentials)$/.test(path);
+  const isSensitive = /credentials|\.(env|pem|key)$/.test(path);
   const isTooLarge = size > MAX_FILE_SIZE;
 
   return {
