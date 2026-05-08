@@ -6,7 +6,7 @@
 function validateCommand(command) {
   const dangerousPatterns = [
     { pattern: /rm\s+-rf/, reason: 'rm -rf detected' },
-    { pattern: /dd\s+/, reason: 'dd command detected' },
+    { pattern: /\bdd\b/, reason: 'dd command detected' },
     { pattern: /mkfs/, reason: 'mkfs detected' },
     { pattern: /chmod\s+777/, reason: 'chmod 777 detected' },
     { pattern: /^sudo\s*$/, reason: 'sudo without command detected' },
