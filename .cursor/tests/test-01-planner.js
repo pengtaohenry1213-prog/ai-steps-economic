@@ -3,8 +3,8 @@
  * 模拟 Planner Agent 生成 Plan 的完整流程
  */
 
-import fs from 'fs';
-import path from 'path';
+const fs = require('fs');
+const path = require('path');
 
 const sampleStepContent = `## Stage1-Step01: 用户登录功能
 

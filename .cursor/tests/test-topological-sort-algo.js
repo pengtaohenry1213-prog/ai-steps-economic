@@ -268,6 +268,142 @@ test('Case 16: 依赖链分叉合并 A→B→C→E, A→D→E', () => {
   assertTrue(idx('D') < idx('E'), 'D before E');
 });
 
+test('Case 16: 依赖链分叉合并 A→B→C→E, A→D→E', () => {
+  const result = topologicalSort([
+    { id: 'A', depends_on: [] },
+    { id: 'B', depends_on: ['A'] },
+    { id: 'C', depends_on: ['B'] },
+    { id: 'D', depends_on: ['A'] },
+    { id: 'E', depends_on: ['C', 'D'] }
+  ]);
+  assertEqual(result.error, null, 'Error');
+  console.log(`   执行顺序: ${result.sorted.map(t => t.id).join(' → ')}`);
+  const idx = (id) => result.sorted.findIndex(t => t.id === id);
+  assertTrue(idx('A') < idx('E'), 'A before E');
+  assertTrue(idx('B') < idx('C'), 'B before C');
+  assertTrue(idx('C') < idx('E'), 'C before E');
+  assertTrue(idx('D') < idx('E'), 'D before E');
+});
+
+console.log('\n--- 边界情况测试 (扩展) ---\n');
+
+test('Case 17: 大型链式依赖 (50个节点)', () => {
+  const todos = [];
+  for (let i = 0; i < 50; i++) {
+    todos.push({
+      id: `task-${i}`,
+      depends_on: i === 0 ? [] : [`task-${i-1}`]
+    });
+  }
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  assertEqual(result.sorted.length, 50, 'Length');
+  assertEqual(result.sorted[0].id, 'task-0', 'First');
+  assertEqual(result.sorted[49].id, 'task-49', 'Last');
+});
+
+test('Case 18: 星型依赖 (中心节点被所有人依赖)', () => {
+  const todos = [];
+  for (let i = 0; i < 20; i++) {
+    todos.push({
+      id: `leaf-${i}`,
+      depends_on: ['center']
+    });
+  }
+  todos.push({ id: 'center', depends_on: [] });
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  assertEqual(result.sorted[0].id, 'center', 'Center first');
+});
+
+test('Case 19: 反向星型依赖 (中心节点依赖所有人)', () => {
+  const todos = [{ id: 'center', depends_on: [] }];
+  for (let i = 0; i < 20; i++) {
+    todos.push({
+      id: `leaf-${i}`,
+      depends_on: []
+    });
+    todos[0].depends_on.push(`leaf-${i}`);
+  }
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  const centerIdx = result.sorted.findIndex(t => t.id === 'center');
+  for (let i = 0; i < 20; i++) {
+    const leafIdx = result.sorted.findIndex(t => t.id === `leaf-${i}`);
+    assertTrue(leafIdx < centerIdx, `leaf-${i} before center`);
+  }
+});
+
+test('Case 20: 不存在的依赖节点 (引用缺失 ID)', () => {
+  const todos = [
+    { id: 'A', depends_on: [] },
+    { id: 'B', depends_on: ['non-existent-id'] },
+    { id: 'C', depends_on: [] }
+  ];
+  const result = topologicalSort(todos);
+  assertEqual(result.error, 'CIRCULAR_DEPENDENCY', 'Error type');
+});
+
+test('Case 21: 大量并行独立任务 (100个)', () => {
+  const todos = [];
+  for (let i = 0; i < 100; i++) {
+    todos.push({ id: `task-${i}`, depends_on: [] });
+  }
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  assertEqual(result.sorted.length, 100, 'Length');
+});
+
+test('Case 22: 依赖模糊的空数组处理', () => {
+  const result = topologicalSort([{ id: 'A' }]);
+  assertEqual(result.error, null, 'Error');
+  assertEqual(result.sorted[0].id, 'A', 'First');
+});
+
+test('Case 23: 依赖为 null vs 空数组', () => {
+  const todos = [
+    { id: 'A', depends_on: null },
+    { id: 'B', depends_on: [] },
+    { id: 'C', depends_on: ['A'] }
+  ];
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  const idx = (id) => result.sorted.findIndex(t => t.id === id);
+  assertTrue(idx('A') < idx('C'), 'A before C');
+  assertTrue(idx('B') < idx('C'), 'B before C');
+});
+
+test('Case 24: 依赖 undefined 处理', () => {
+  const todos = [
+    { id: 'A', depends_on: undefined },
+    { id: 'B', depends_on: [] },
+    { id: 'C', depends_on: ['A'] }
+  ];
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  const idx = (id) => result.sorted.findIndex(t => t.id === id);
+  assertTrue(idx('A') < idx('C'), 'A before C');
+});
+
+test('Case 25: 多层菱形依赖 (复杂图)', () => {
+  const todos = [
+    { id: 'A', depends_on: [] },
+    { id: 'B1', depends_on: ['A'] },
+    { id: 'B2', depends_on: ['A'] },
+    { id: 'C1', depends_on: ['B1'] },
+    { id: 'C2', depends_on: ['B1'] },
+    { id: 'C3', depends_on: ['B2'] },
+    { id: 'C4', depends_on: ['B2'] },
+    { id: 'D', depends_on: ['C1', 'C2', 'C3', 'C4'] }
+  ];
+  const result = topologicalSort(todos);
+  assertEqual(result.error, null, 'Error');
+  const idx = (id) => result.sorted.findIndex(t => t.id === id);
+  assertTrue(idx('A') < idx('D'), 'A before D');
+  assertTrue(idx('B1') < idx('D'), 'B1 before D');
+  assertTrue(idx('B2') < idx('D'), 'B2 before D');
+});
+
 console.log('\n=== 结果: ' + passed + ' passed, ' + failed + ' failed ===\n');
 
 console.log('--- 算法说明 ---\n');
