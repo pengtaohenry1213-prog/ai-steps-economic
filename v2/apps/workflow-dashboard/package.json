@@ -1,0 +1,25 @@
+{
+  "name": "workflow-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "generate:anon-key": "node scripts/generate-anon-key.mjs"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@supabase/supabase-js": "^2.105.4",
+    "element-plus": "^2.14.0",
+    "jsonwebtoken": "^9.0.3",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "vite": "^6.0.0"
+  }
+}
