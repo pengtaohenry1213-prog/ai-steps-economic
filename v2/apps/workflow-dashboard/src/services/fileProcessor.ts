@@ -34,6 +34,86 @@ export function estimateTokens(text: string): number {
   return Math.ceil(charCount / (CHARS_PER_TOKEN_CN + CHARS_PER_TOKEN_EN) * 2)
 }
 
+const PROPOSAL_KEYWORDS = ['项目', '背景', '目标', '范围', '需求', '功能', '里程碑', '风险', '验收', '立项', '问题', '技术', '架构', '版本', '测试', '部署']
+const REQUIREMENT_KEYWORDS = ['需求', '功能', '用例', '用户', '场景', '交互', '接口', '数据', '性能', '安全', '非功能']
+const ARCHITECTURE_KEYWORDS = ['架构', '设计', '技术选型', '组件', '模块', '接口', '数据流', '部署', '技术栈']
+
+function getKeywordsForType(type: string): string[] {
+  switch (type) {
+    case 'proposal':
+      return PROPOSAL_KEYWORDS
+    case 'requirement':
+      return REQUIREMENT_KEYWORDS
+    case 'architecture':
+      return ARCHITECTURE_KEYWORDS
+    default:
+      return PROPOSAL_KEYWORDS
+  }
+}
+
+function isRelevantLine(line: string, keywords: string[]): boolean {
+  const lowerLine = line.toLowerCase()
+  return keywords.some(keyword => lowerLine.includes(keyword))
+}
+
+function extractSemanticChunks(content: string, promptType: string = 'proposal'): string {
+  const keywords = getKeywordsForType(promptType)
+  const lines = content.split('\n')
+  const result: string[] = []
+  let currentSection: string[] = []
+  let inRelevantSection = false
+  let sectionStartIdx = 0
+
+  const flushSection = () => {
+    if (currentSection.length > 0) {
+      const sectionText = currentSection.join('\n')
+      if (estimateTokens(sectionText) > 50) {
+        result.push(`\n=== 相关段落 ${result.length + 1} ===\n`)
+        result.push(sectionText)
+      }
+      currentSection = []
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    if (line.startsWith('#')) {
+      flushSection()
+
+      if (isRelevantLine(line, keywords)) {
+        inRelevantSection = true
+        currentSection = [line]
+        sectionStartIdx = i
+      } else {
+        inRelevantSection = false
+      }
+    } else if (inRelevantSection) {
+      if (line.trim() === '' || line.trim().startsWith('-') || line.trim().startsWith('*') || line.startsWith('|')) {
+        currentSection.push(line)
+      } else if (line.length < 200) {
+        currentSection.push(line)
+      } else if (isRelevantLine(line, keywords)) {
+        currentSection.push(line.substring(0, 150) + '...')
+      }
+
+      if (currentSection.length > 100) {
+        flushSection()
+        inRelevantSection = false
+      }
+    } else if (isRelevantLine(line, keywords)) {
+      if (currentSection.length > 0 && !inRelevantSection) {
+        flushSection()
+      }
+      currentSection = [line]
+      inRelevantSection = true
+    }
+  }
+
+  flushSection()
+  return result.join('\n')
+}
+
 function extractKeyContent(content: string): string {
   const lines = content.split('\n')
   const result: string[] = []
@@ -114,13 +194,29 @@ function truncateContent(content: string, maxTokens: number): { content: string;
   }
 }
 
-export function processFiles(files: { name: string; content: string }[]): ProcessingResult {
+export function processFiles(files: { name: string; content: string }[], promptType: string = 'proposal'): ProcessingResult {
   const processedFiles: ProcessedFile[] = []
   let totalTokens = 0
 
   for (const file of files) {
-    const compressed = extractKeyContent(file.content)
-    const tokens = estimateTokens(compressed)
+    const semanticContent = extractSemanticChunks(file.content, promptType)
+    const fallbackContent = extractKeyContent(file.content)
+    const semanticTokens = estimateTokens(semanticContent)
+    const fallbackTokens = estimateTokens(fallbackContent)
+
+    let compressed: string
+    let tokens: number
+
+    if (semanticTokens >= 100) {
+      compressed = semanticContent
+      tokens = semanticTokens
+    } else if (fallbackTokens >= 100) {
+      compressed = fallbackContent
+      tokens = fallbackTokens
+    } else {
+      compressed = fallbackContent
+      tokens = fallbackTokens
+    }
 
     if (tokens > SAFE_CONTEXT_LIMIT) {
       const { content, truncated } = truncateContent(compressed, SAFE_CONTEXT_LIMIT)
@@ -138,6 +234,7 @@ export function processFiles(files: { name: string; content: string }[]): Proces
         tokens,
         truncated: false
       })
+      totalTokens += tokens
     }
   }
 

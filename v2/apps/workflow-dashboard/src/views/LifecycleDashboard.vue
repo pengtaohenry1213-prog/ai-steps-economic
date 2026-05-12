@@ -259,6 +259,7 @@
 
     <!-- 文档编辑器弹窗（统一组件） -->
     <DocumentEditor
+      v-if="!useSimpleEditor"
       v-model="showDocumentEditor"
       :document="editorDocument"
       :stage-name="editorStageName"
@@ -271,6 +272,18 @@
       @reset="handleEditorReset"
       @delete="handleEditorDelete"
       @complete="handleEditorComplete"
+    />
+    <DocumentEditorSimple
+      v-else
+      v-model="showDocumentEditor"
+      :content="editorMarkdownContent"
+      :stage-name="editorStageName"
+      :stage-title="editorTitle"
+      :read-only="editorReadOnly"
+      :is-streaming="isGenerating"
+      :default-template="editorStageName === 'init' ? 'proposal' : 'requirement'"
+      @update:content="editorMarkdownContent = $event"
+      @save="handleSimpleEditorSave"
     />
 
     <!-- AI 分析结果弹窗 -->
@@ -353,6 +366,7 @@ import { processFiles, getFileWarnings } from '../services/fileProcessor'
 import { extractJsonFromMarkdown } from '../services/documentNormalizer'
 import GapAnalysisViewer from '../components/GapAnalysisViewer.vue'
 import DocumentEditor from '../components/DocumentEditor.vue'
+import DocumentEditorSimple from '../components/DocumentEditorSimple.vue'
 import ModelSelector from '../components/ModelSelector.vue'
 import { getDefaultTemplate } from '../config/industryTemplates'
 import type { ProposalContent, GapAnalysisResult } from '../types'
@@ -395,12 +409,14 @@ const currentUploadStageId = ref<string>('init')
 // 统一的文档编辑器状态
 const showDocumentEditor = ref(false)
 const editorDocument = ref<ProposalContent | null>(null)
+const editorMarkdownContent = ref('')
 const editorStageName = ref('')
 const editorTitle = ref('')
 const editorReadOnly = ref(false)
 const editorLoadingText = ref('加载中...')
 const showAnalysisResult = ref(false)
 const analysisResult = ref<GapAnalysisResult | null>(null)
+const useSimpleEditor = ref(true)
 
 // 获取当前选择的模型
 function getCurrentModel() {
@@ -610,7 +626,6 @@ function removeFile(index: number) {
 }
 
 function cancelUpload() {
-  console.log('[DEBUG cancelUpload] called, abortController:', abortController.value)
   // 如果有正在进行的请求，取消它
   if (abortController.value) {
     console.log('[DEBUG cancelUpload] aborting...')
@@ -667,18 +682,47 @@ async function startAIGeneration() {
     }
 
     // 压缩和截断文件内容，避免超出上下文限制
-    const processed = processFiles(files)
+    const stageToPromptType: Record<string, string> = {
+      'init': 'proposal', 'requirement': 'requirement', 'architecture': 'architecture',
+      'development': 'prd', 'testing': 'test_plan', 'acceptance': 'acceptance',
+      'deployment': 'deployment', 'iteration': 'requirement'
+    }
+    const processed = processFiles(files, stageToPromptType[stageId] || 'proposal')
     const warnings = getFileWarnings(processed)
     for (const warning of warnings) {
       ElMessage.warning(warning)
+    }
+
+    // 预先打开编辑器（流式输出场景下用户可以看到生成过程）
+    if (useSimpleEditor.value) {
+      editorMarkdownContent.value = ''
+      editorStageName.value = stageId
+      editorTitle.value = `${currentProposalStage.value?.name || '立项'} - ${stageId === 'init' ? '立项书编辑器' : '需求文档编辑器'}`
+      editorReadOnly.value = false
+      editorLoadingText.value = 'AI 分析中，请稍候...'
+      showDocumentEditor.value = true
     }
 
     // 根据阶段类型生成内容（会自动选择对应的 Prompt 模板）
     const currentModel = getCurrentModel()
     const aiResult = await generateContentByStage(stageId, processed.files, currentModel || 'deepseek-r1', abortController.value.signal)
 
-    proposalContent.value = parseAIResponse(aiResult.rawText, stageId, aiResult.structured)
-    originalProposalContent.value = JSON.parse(JSON.stringify(proposalContent.value))
+    if (useSimpleEditor.value) {
+      // 简单编辑器模式：直接使用 markdown 内容
+      editorMarkdownContent.value = aiResult.markdownText || aiResult.jsonText || ''
+    } else {
+      // 结构化编辑器模式：解析为 ProposalContent
+      let structuredData: Record<string, unknown> | undefined
+      if (aiResult.jsonText) {
+        try {
+          structuredData = JSON.parse(aiResult.jsonText)
+        } catch {
+          structuredData = undefined
+        }
+      }
+      proposalContent.value = parseAIResponse(aiResult.markdownText || aiResult.jsonText || '', stageId, structuredData)
+      originalProposalContent.value = JSON.parse(JSON.stringify(proposalContent.value))
+    }
 
     // 保存到 Pinia store
     store.saveProposalContent(stageId, proposalContent.value)
@@ -718,14 +762,19 @@ async function startAIGeneration() {
     }
 
     showUploadDialog.value = false
-    // 打开统一的文档编辑器
-    editorDocument.value = proposalContent.value
-    editorStageName.value = stageId
-    editorTitle.value = `${currentProposalStage.value?.name || '立项'} - ${stageId === 'init' ? '立项书编辑器' : '需求文档编辑器'}`
-    editorReadOnly.value = false
-    editorLoadingText.value = 'AI 分析中，请稍候...'
-    showDocumentEditor.value = true
-    ElMessage.success(stageId === 'init' ? '立项书已生成' : '需求文档已生成')
+
+    if (!useSimpleEditor.value) {
+      // 旧版结构化编辑器：生成完成后打开
+      editorDocument.value = proposalContent.value
+      editorStageName.value = stageId
+      editorTitle.value = `${currentProposalStage.value?.name || '立项'} - ${stageId === 'init' ? '立项书编辑器' : '需求文档编辑器'}`
+      editorReadOnly.value = false
+      editorLoadingText.value = 'AI 分析中，请稍候...'
+      showDocumentEditor.value = true
+      ElMessage.success(stageId === 'init' ? '立项书已生成' : '需求文档已生成')
+    } else {
+      ElMessage.success(stageId === 'init' ? '立项书已生成' : '需求文档已生成')
+    }
 
     // 保存完整快照（包含 lifecycle + workflow 状态）
     await store.saveFullSnapshot(workflowStore.steps)
@@ -779,6 +828,10 @@ function parseAIResponse(response: string, stageId: string = 'init', structuredD
     'iteration': 'requirement'
   }
 
+  function getPromptType(sid: string): string {
+    return stageToPromptType[sid] || 'proposal'
+  }
+
   const promptType = (stageToPromptType[stageId] || 'proposal') as any
 
   // 优先使用传入的结构化数据，其次从响应中提取 JSON
@@ -811,8 +864,21 @@ function parseAIResponse(response: string, stageId: string = 'init', structuredD
           }
         }
         result.background = jsonData.background || ''
-        result.currentIssues = Array.isArray(jsonData.currentIssues) ? jsonData.currentIssues : []
-        result.goals = Array.isArray(jsonData.goals) ? jsonData.goals : []
+
+        // 处理 currentIssuesText (文本) -> currentIssues (数组)
+        if (jsonData.currentIssuesText && typeof jsonData.currentIssuesText === 'string') {
+          result.currentIssues = jsonData.currentIssuesText.split('\n').filter(line => line.trim())
+        } else {
+          result.currentIssues = Array.isArray(jsonData.currentIssues) ? jsonData.currentIssues : []
+        }
+
+        // 处理 goalsText (文本) -> goals (数组)
+        if (jsonData.goalsText && typeof jsonData.goalsText === 'string') {
+          result.goals = jsonData.goalsText.split('\n').filter(line => line.trim())
+        } else {
+          result.goals = Array.isArray(jsonData.goals) ? jsonData.goals : []
+        }
+
         result.scope = normalizeScope(jsonData.scope)
         result.acceptance = normalizeAcceptance(jsonData.acceptance)
         result.milestones = normalizeMilestones(jsonData.milestones)
@@ -849,7 +915,13 @@ function parseAIResponse(response: string, stageId: string = 'init', structuredD
 function parseMarkdownResponse(response: string, stageId: string): ProposalContent {
   // 尝试从 Markdown 中提取结构化数据
   const nameMatch = response.match(/#\s+(.+)/)
-  const background = extractSection(response, '2. 项目背景与目标') || ''
+
+  // 分别提取各子章节，避免混在一起
+  const backgroundSection = extractSection(response, '2.1 项目背景') || extractSection(response, '项目背景') || ''
+  const currentIssuesSection = extractSection(response, '2.2 当前问题') || extractSection(response, '当前问题') || ''
+  const goalsSection = extractSection(response, '2.3 项目目标') || extractSection(response, '2.3 升级目标') || extractSection(response, '项目目标') || ''
+
+  // 提取列表项
   const scopeInScope = extractListItems(response, 'In Scope')
   const scopeOutScope = extractListItems(response, 'Out of Scope')
   const acceptance = extractSection(response, '4. 验收标准') || ''
@@ -863,9 +935,25 @@ function parseMarkdownResponse(response: string, stageId: string): ProposalConte
     .map(line => line.replace(/^\d+[\.\、]\s*/, '').trim())
     .filter(line => line.length > 0)
 
+  // 解析当前问题（从列表或段落中提取）
+  const currentIssues = currentIssuesSection
+    .split('\n')
+    .filter(line => /^\d+[\.\、]/.test(line.trim()) || line.trim().startsWith('-') || line.trim().startsWith('*'))
+    .map(line => line.replace(/^\d+[\.\、]\s*/, '').replace(/^[-*]\s*/, '').trim())
+    .filter(line => line.length > 0)
+
+  // 解析目标（从列表中提取）
+  const goals = goalsSection
+    .split('\n')
+    .filter(line => /^\d+[\.\、]/.test(line.trim()) || line.trim().startsWith('-') || line.trim().startsWith('*') || line.includes('|'))
+    .map(line => line.replace(/^\d+[\.\、]\s*/, '').replace(/^[-*]\s*/, '').replace(/\|[^|]+\|$/, '').trim())
+    .filter(line => line.length > 2)
+
   return {
     name: nameMatch ? nameMatch[1].trim() : '',
-    background,
+    background: backgroundSection,
+    currentIssues: currentIssues.length > 0 ? currentIssues : [],
+    goals: goals.length > 0 ? goals : [],
     scope: {
       inScope: scopeInScope,
       outScope: scopeOutScope
@@ -1099,6 +1187,15 @@ function handleEditorComplete() {
   }).catch(() => {})
 }
 
+function handleSimpleEditorSave(content: string) {
+  const stageId = currentProposalStage.value?.id || currentUploadStageId.value
+  const markdownContent: ProposalContent = {
+    fullText: content
+  }
+  store.saveProposalContent(stageId, markdownContent)
+  ElMessage.success('文档已保存')
+}
+
 function viewDocument(stage: any) {
   if (stage.proposalContent) {
     editorDocument.value = stage.proposalContent
@@ -1309,7 +1406,7 @@ ${driversContext}
       { name: '架构驱动因素.md', content: architecturePrompt }
     ]
 
-    const processed = processFiles(files)
+    const processed = processFiles(files, 'architecture')
     const currentModel = getCurrentModel()
     const aiResult = await generateContentByStage('architecture', processed.files, currentModel || 'deepseek-r1', architectureAbortController.signal)
 
@@ -1419,7 +1516,7 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
       { name: '行业标准.md', content: industryContext }
     ]
 
-    const processed = processFiles(files)
+    const processed = processFiles(files, 'requirement')
     const currentModel = getCurrentModel()
     const aiResult = await generateContentByStage('requirement_analysis', processed.files, currentModel || 'deepseek-r1', analysisAbortController.signal)
 

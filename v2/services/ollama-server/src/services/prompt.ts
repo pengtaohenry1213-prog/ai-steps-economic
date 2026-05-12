@@ -3,7 +3,7 @@
  * Build prompts based on stage type
  */
 
-import type { PromptType } from '../types/index.js'
+import type { PromptType, ResponseFormat } from '../types/index.js'
 
 // Role definitions for each prompt type
 type RoleDefinition = {
@@ -500,7 +500,8 @@ export function getPromptTypeByStageId(stageId: string): PromptType {
  */
 export function buildPrompt(
   type: PromptType,
-  files: { name: string; content: string }[]
+  files: { name: string; content: string }[],
+  responseFormat: ResponseFormat = 'both'
 ): string {
   const role = ROLE_DEFINITIONS[type]
   const task = TASK_DEFINITIONS[type]
@@ -552,6 +553,39 @@ ${df.deadline ? `决策时限：提交后 ${df.deadline} 内必须给出决策` 
   // Build JSON Schema template
   const jsonSchemaText = JSON.stringify(jsonSchema, null, 2)
 
+  // Build output format section based on responseFormat
+  let outputFormatSection = ''
+  switch (responseFormat) {
+    case 'json-only':
+      outputFormatSection = `【输出格式】（只返回 JSON）
+
+请严格按照以下 JSON Schema 格式输出，不要包含任何 markdown 代码块标记：
+${jsonSchemaText}
+
+【重要】只输出 JSON，不要输出其他内容。`
+      break
+    case 'markdown-only':
+      outputFormatSection = `【输出格式】（只返回 Markdown）
+
+请按以下结构输出 Markdown 内容：
+${markdownOutline}
+
+【重要】只输出 Markdown，不要输出 JSON。`
+      break
+    case 'both':
+    default:
+      outputFormatSection = `【输出格式】（必须同时返回 JSON 和 Markdown，分开输出）
+
+## JSON 结构（用于系统解析）
+请只输出下面这个 JSON 对象，不要包含 markdown 代码块标记：
+${jsonSchemaText}
+
+## Markdown 格式（用于人工阅读）
+${markdownOutline}
+
+【重要】输出时，JSON 和 Markdown 必须分开，JSON 纯文本（无代码块标记），Markdown 纯文本（无 JSON 内容）。`
+  }
+
   // Build complete prompt
   return `【角色】${role.title}
 ${role.certifications ? `【资质】${role.certifications}` : ''}
@@ -576,20 +610,8 @@ ${files.map((f) => `=== ${f.name} ===\n${f.content}`).join('\n\n---\n\n')}
 【输出要求】
 ${constraintsText}
 
-【输出格式】（必须同时包含 JSON 和 Markdown）
-
-## JSON 结构（用于系统解析）
-\`\`\`json
-${jsonSchemaText}
-\`\`\`
-
-## Markdown 格式（用于人工阅读）
-
-${markdownOutline}
-
-【质量检查】
-生成完成后，请自检：
-${qualityChecksText}
+${outputFormatSection}
+${responseFormat === 'both' ? '\n【质量检查】\n生成完成后，请自检：\n' + qualityChecksText : ''}
 
 请开始生成：`
 }

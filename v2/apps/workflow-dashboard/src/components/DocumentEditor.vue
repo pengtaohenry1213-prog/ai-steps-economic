@@ -254,6 +254,7 @@ watch(() => props.document, (newContent) => {
 // 同步 JSON 字段到文本字段
 function syncJsonToText() {
   if (!editContent.value) return
+
   currentIssuesText.value = Array.isArray(editContent.value.currentIssues) 
     ? editContent.value.currentIssues.join('\n') : ''
   goalsText.value = Array.isArray(editContent.value.goals) 

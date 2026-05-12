@@ -109,7 +109,8 @@ router.post('/api/generate-by-stage', async (req, res) => {
       model = 'deepseek-r1',
       provider = 'ollama',
       baseUrl,
-      apiKey
+      apiKey,
+      responseFormat = 'both'
     } = req.body as GenerateByStageRequest
 
     if (!stageId || !files) {
@@ -136,8 +137,9 @@ router.post('/api/generate-by-stage', async (req, res) => {
     }
 
     // Build prompt
-    const prompt = buildPrompt(promptType, files)
+    const prompt = buildPrompt(promptType, files, responseFormat)
     console.log(`[${requestId}]   promptLength: ${prompt.length} chars`)
+    console.log(`[${requestId}]   responseFormat: ${responseFormat}`)
 
     // Get expected JSON schema for this prompt type
     const jsonSchema = getJsonSchema(promptType)
@@ -161,7 +163,7 @@ router.post('/api/generate-by-stage', async (req, res) => {
     }
 
     // Normalize the response to standard format
-    const normalized = normalizeResponse(response, jsonSchema, model, genDuration)
+    const normalized = normalizeResponse(response, jsonSchema, model, genDuration, responseFormat)
 
     const totalDuration = Date.now() - startTime
     console.log(`[${requestId}] [TOTAL] ${totalDuration}ms (model: ${model})`)

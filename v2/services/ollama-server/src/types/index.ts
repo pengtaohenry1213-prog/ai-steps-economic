@@ -41,6 +41,8 @@ export interface FileInput {
   content: string
 }
 
+export type ResponseFormat = 'json-only' | 'markdown-only' | 'both'
+
 export interface GenerateByStageRequest {
   stageId: string
   files: FileInput[]
@@ -48,6 +50,7 @@ export interface GenerateByStageRequest {
   provider?: 'ollama' | 'openai'
   baseUrl?: string
   apiKey?: string
+  responseFormat?: ResponseFormat
 }
 
 export interface GenerateByStageResponse {
@@ -63,14 +66,16 @@ export interface GenerateByStageResponse {
 export interface StandardResponse {
   success: boolean
   data: {
-    /** 结构化数据（JSON 解析后的对象） */
-    structured: Record<string, unknown>
-    /** 原始完整文本（Markdown，用于预览） */
-    rawText: string
     /** 模型名称 */
     model: string
     /** 处理耗时 ms */
     duration: number
+    /** 结构化 JSON 文本（用于系统解析/存储） */
+    jsonText: string
+    /** Markdown 文本（用于人工阅读预览） */
+    markdownText: string
+    /** 原始完整响应（备选） */
+    rawText?: string
   }
   error?: string
   timestamp: string

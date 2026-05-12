@@ -3,7 +3,7 @@
  * 将不同模型的输出归一化为标准格式
  */
 
-import type { StandardResponse } from '../types/index.js'
+import type { StandardResponse, ResponseFormat } from '../types/index.js'
 
 /**
  * 归一化模型响应为标准格式
@@ -12,55 +12,139 @@ export function normalizeResponse(
   rawOutput: string,
   expectedSchema: object,
   model: string,
-  duration: number
+  duration: number,
+  responseFormat: ResponseFormat = 'both'
 ): StandardResponse {
   let cleaned = rawOutput
 
   // 1. 去除 thinking 标签 (<think>...)
   cleaned = cleaned.replace(/^<think>[\s\S]*?<\/think>\s*/gi, '').trim()
 
-  // 2. 提取 JSON
-  let structured: Record<string, unknown> = {}
+  // 2. 根据 responseFormat 提取 JSON 和 Markdown
+  let jsonText = ''
+  let markdownText = ''
 
-  const jsonStart = cleaned.indexOf('```json')
-  if (jsonStart !== -1) {
-    const afterJsonStart = cleaned.substring(jsonStart + 7)
-    const closingIdx = afterJsonStart.indexOf('```')
-    if (closingIdx !== -1) {
-      const jsonContent = afterJsonStart.substring(0, closingIdx)
+  const jsonSectionMarkers = ['## JSON 结构', '## JSON 格式', '## JSON格式', '## JSON 格式（系统解析用）']
+  const markdownSectionMarkers = ['## Markdown 格式', '## Markdown格式', '## Markdown 格式（人工阅读）']
+
+  let jsonSectionIdx = -1
+  let markdownSectionIdx = -1
+  let foundJsonMarker = ''
+  let foundMarkdownMarker = ''
+
+  for (const marker of jsonSectionMarkers) {
+    const idx = cleaned.indexOf(marker)
+    if (idx !== -1) {
+      jsonSectionIdx = idx
+      foundJsonMarker = marker
+      break
+    }
+  }
+
+  for (const marker of markdownSectionMarkers) {
+    const idx = cleaned.indexOf(marker)
+    if (idx !== -1) {
+      markdownSectionIdx = idx
+      foundMarkdownMarker = marker
+      break
+    }
+  }
+
+  if (responseFormat === 'json-only') {
+    // json-only: 整个响应应该是纯 JSON
+    if (cleaned.startsWith('{')) {
       try {
-        structured = JSON.parse(jsonContent.trim())
-      } catch (e) {
-        console.error('[Normalizer] JSON parse error:', e)
+        JSON.parse(cleaned)
+        jsonText = cleaned
+      } catch {
+        // 尝试找 ```json 代码块
+        const codeBlockMatch = cleaned.match(/```json\n([\s\S]*?)\n```/)
+        if (codeBlockMatch) {
+          jsonText = codeBlockMatch[1].trim()
+        } else {
+          jsonText = cleaned
+        }
+      }
+    } else {
+      const jsonStart = cleaned.indexOf('{')
+      if (jsonStart !== -1) {
+        const potentialJson = cleaned.substring(jsonStart)
+        try {
+          JSON.parse(potentialJson)
+          jsonText = potentialJson
+        } catch {
+          const codeBlockMatch = cleaned.match(/```json\n([\s\S]*?)\n```/)
+          if (codeBlockMatch) {
+            jsonText = codeBlockMatch[1].trim()
+          } else {
+            jsonText = potentialJson
+          }
+        }
+      } else {
+        // 尝试找 ```json 代码块
+        const codeBlockMatch = cleaned.match(/```json\n([\s\S]*?)\n```/)
+        if (codeBlockMatch) {
+          jsonText = codeBlockMatch[1].trim()
+        } else {
+          jsonText = cleaned
+        }
+      }
+    }
+    markdownText = ''
+  } else if (responseFormat === 'markdown-only') {
+    // markdown-only: 整个响应应该是纯 Markdown
+    markdownText = cleaned
+    jsonText = ''
+  } else {
+    // both: 需要分离 JSON 和 Markdown
+    if (jsonSectionIdx !== -1 && markdownSectionIdx !== -1) {
+      jsonText = cleaned.substring(jsonSectionIdx + foundJsonMarker.length, markdownSectionIdx).trim()
+      markdownText = cleaned.substring(markdownSectionIdx + foundMarkdownMarker.length).trim()
+    } else if (jsonSectionIdx !== -1) {
+      jsonText = cleaned.substring(jsonSectionIdx + foundJsonMarker.length).trim()
+      markdownText = ''
+    } else if (markdownSectionIdx !== -1) {
+      markdownText = cleaned.substring(markdownSectionIdx + foundMarkdownMarker.length).trim()
+      jsonText = ''
+    } else {
+      // 无法分离，尝试回退提取
+      markdownText = cleaned
+      jsonText = ''
+
+      // 回退：如果 markdownText 以 { 开头，可能是 JSON + --- + Markdown 的混合格式
+      if (cleaned.trim().startsWith('{')) {
+        const dividerIdx = cleaned.indexOf('\n---\n')
+        if (dividerIdx !== -1) {
+          const potentialJson = cleaned.substring(0, dividerIdx).trim()
+          const potentialMarkdown = cleaned.substring(dividerIdx + 5).trim()
+          try {
+            JSON.parse(potentialJson)
+            jsonText = potentialJson
+            markdownText = potentialMarkdown
+          } catch {
+            // 不是有效 JSON，保持原样
+          }
+        } else {
+          // 没有 --- 分隔符，尝试找 ```json 代码块
+          const codeBlockMatch = cleaned.match(/```json\n([\s\S]*?)\n```/)
+          if (codeBlockMatch) {
+            jsonText = codeBlockMatch[1].trim()
+            markdownText = cleaned.replace(codeBlockMatch[0], '').trim()
+          }
+        }
       }
     }
   }
 
-  // 如果上面失败，尝试直接解析整个字符串
-  if (Object.keys(structured).length === 0) {
-    try {
-      const directParse = JSON.parse(cleaned.trim())
-      if (typeof directParse === 'object' && !Array.isArray(directParse)) {
-        structured = directParse
-      }
-    } catch {
-      // 不是纯 JSON
-    }
-  }
-
-  // 3. 提取 Markdown（去除所有 JSON 块后的内容）
-  let rawText = cleaned
-  rawText = rawText.replace(/```json[\s\S]*?```/gi, '').trim()
-  rawText = rawText.replace(/```[\s\S]*?```/gi, '').trim()
-
-  // 4. 构建标准响应
+  // 3. 构建标准响应
   return {
     success: true,
     data: {
-      structured,
-      rawText,
       model,
-      duration
+      duration,
+      jsonText,
+      markdownText,
+      rawText: cleaned
     },
     timestamp: new Date().toISOString()
   }
@@ -73,10 +157,11 @@ export function createErrorResponse(error: string): StandardResponse {
   return {
     success: false,
     data: {
-      structured: {},
-      rawText: '',
       model: 'unknown',
-      duration: 0
+      duration: 0,
+      jsonText: '',
+      markdownText: '',
+      rawText: ''
     },
     error,
     timestamp: new Date().toISOString()

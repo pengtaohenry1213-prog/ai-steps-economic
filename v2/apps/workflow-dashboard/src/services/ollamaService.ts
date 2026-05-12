@@ -56,8 +56,9 @@ export interface GenerateByStageRequest {
 export interface GenerateByStageResponse {
   success: boolean
   data?: {
-    structured: Record<string, unknown>
-    rawText: string
+    jsonText: string
+    markdownText: string
+    rawText?: string
     model: string
     duration: number
   }
@@ -124,7 +125,7 @@ export async function generateContentByStage(
   files: ProcessedFile[],
   model: string | AIModel = 'deepseek-r1',
   signal?: AbortSignal
-): Promise<{ rawText: string; structured: Record<string, unknown>; model: string; duration: number }> {
+): Promise<{ jsonText: string; markdownText: string; model: string; duration: number }> {
   // 获取模型配置
   const modelConfig = typeof model === 'string'
     ? getModelById(model) || { id: model, name: model, provider: 'ollama' as const }
@@ -161,8 +162,8 @@ export async function generateContentByStage(
     }
 
     return {
-      rawText: data.data.rawText,
-      structured: data.data.structured,
+      jsonText: data.data.jsonText,
+      markdownText: data.data.markdownText,
       model: data.data.model,
       duration: data.data.duration
     }
@@ -178,10 +179,10 @@ export async function generateContentByStage(
   const promptType = getPromptTypeByStageId(stageId)
   const prompt = buildPrompt({ type: promptType, files, stageId })
   const text = await callOpenAI(modelConfig, prompt)
-  
+
   return {
-    rawText: text,
-    structured: {},
+    jsonText: '',
+    markdownText: text,
     model: modelConfig.id,
     duration: 0
   }
