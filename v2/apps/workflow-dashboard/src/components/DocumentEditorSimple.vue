@@ -17,9 +17,6 @@
         <el-button size="small" @click="setViewMode('preview')" :type="viewMode === 'preview' ? 'primary' : ''">
           预览
         </el-button>
-        <el-button size="small" @click="setViewMode('split')" :type="viewMode === 'split' ? 'primary' : ''">
-          分屏
-        </el-button>
       </el-button-group>
 
       <div class="toolbar-center">
@@ -35,10 +32,10 @@
           <el-icon class="el-icon--left"><CopyDocument /></el-icon>
           复制
         </el-button>
-        <el-button size="small" @click="insertTemplate">
+        <!-- <el-button size="small" @click="insertTemplate">
           <el-icon class="el-icon--left"><DocumentAdd /></el-icon>
           插入模板
-        </el-button>
+        </el-button> -->
         <el-button size="small" @click="handleExport">
           <el-icon class="el-icon--left"><Download /></el-icon>
           导出
@@ -53,22 +50,45 @@
     <div class="editor-container" :class="`view-${viewMode}`">
       <!-- 左侧编辑区 -->
       <div v-show="viewMode !== 'preview'" class="editor-pane">
-        <el-input
-          ref="textareaRef"
-          v-model="markdownContent"
-          type="textarea"
-          :rows="editorRows"
-          placeholder="输入 Markdown 内容，或点击「插入模板」开始..."
-          class="markdown-textarea"
-          @input="handleContentChange"
-          @scroll="syncScroll"
-        />
+        <div v-if="isStreaming" class="textarea-wrapper streaming-active">
+          <div class="streaming-content">
+            <div class="streaming-header">
+              <el-icon class="is-loading" :size="14"><Loading /></el-icon>
+              <span>正文生成中...</span>
+            </div>
+            <div class="streaming-text" v-html="renderedStreamingContent"></div>
+            <span class="streaming-cursor">|</span>
+          </div>
+        </div>
+        <div v-else class="textarea-wrapper">
+          <el-input
+            ref="textareaRef"
+            v-model="markdownContent"
+            type="textarea"
+            :rows="editorRows"
+            placeholder="输入 Markdown 内容..."
+            class="markdown-textarea"
+            @input="handleContentChange"
+            @scroll="syncScroll"
+          />
+        </div>
       </div>
 
       <!-- 右侧预览区 -->
       <div v-show="viewMode !== 'edit'" class="preview-pane" ref="previewPaneRef" @scroll="handlePreviewScroll">
-        <div class="preview-content markdown-body" v-html="renderedMarkdown"></div>
-        <div v-if="!markdownContent.trim()" class="empty-preview">
+        <div v-if="isStreaming && thinkingContent" class="preview-wrapper thinking-wrapper">
+          <div class="thinking-header">
+            <el-icon class="is-loading" :size="14"><Loading /></el-icon>
+            <span>思考中...</span>
+          </div>
+          <div class="preview-content thinking-preview" v-html="renderedThinking"></div>
+        </div>
+        <div v-else-if="isStreaming" class="preview-content loading-preview">
+          <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+          <span>AI 生成中...</span>
+        </div>
+        <div v-else class="preview-content markdown-body" v-html="renderedMarkdown"></div>
+        <div v-if="!markdownContent.trim() && !isStreaming" class="empty-preview">
           <el-empty description="预览内容为空" />
         </div>
       </div>
@@ -126,10 +146,14 @@ const emit = defineEmits<Emits>()
 
 const textareaRef = ref()
 const previewPaneRef = ref()
-const viewMode = ref<'edit' | 'preview' | 'split'>('split')
+const viewMode = ref<'edit' | 'preview' | 'split'>('edit')
 const markdownContent = ref('')
 const isDirty = ref(false)
 const originalContent = ref('')
+const showCursor = ref(false)
+const fullContent = ref('')
+const thinkingContent = ref('')
+const showJsonLoading = ref(false)
 
 const TEMPLATES: Record<string, string> = {
   proposal: `## 项目名称
@@ -289,6 +313,19 @@ const renderedMarkdown = computed(() => {
   return renderMarkdown(markdownContent.value)
 })
 
+const renderedStreamingContent = computed(() => {
+  return renderMarkdown(markdownContent.value)
+})
+
+const renderedThinking = computed(() => {
+  if (!thinkingContent.value) return ''
+  return thinkingContent.value
+    .replace(/<think>/gi, '')
+    .replace(/<\/think>/gi, '')
+    .replace(/^<think>([\s\S]*?)<\/think>/gim, '<think>$1</think>')
+    .replace(/\n/g, '<br/>')
+})
+
 function renderMarkdown(text: string): string {
   if (!text) return ''
 
@@ -375,12 +412,40 @@ function handleClosed() {
 }
 
 function appendContent(chunk: string) {
-  markdownContent.value += chunk
-  isDirty.value = true
+  fullContent.value += chunk
+
+  const thinkMatches = chunk.match(/<think>[\s\S]*?<\/think>/gi)
+  if (thinkMatches) {
+    const processed = thinkMatches.join('\n')
+      .replace(/<\/think>/gi, '')
+    thinkingContent.value = processed
+  }
+
+  const nonThink = chunk.replace(/<think>[\s\S]*?<\/think>/gi, '')
+  const filteredContent = filterJsonContent(nonThink)
+  if (filteredContent.trim()) {
+    const lines = filteredContent.split('\n').filter(l => !l.startsWith('</think>') && !l.match(/^<think>/))
+    const visibleLines = 3
+    const displayLines = lines.slice(-visibleLines)
+    markdownContent.value = displayLines.join('\n')
+    isDirty.value = true
+  }
+}
+
+function filterJsonContent(content: string): string {
+  return content
+    .replace(/^```json\n[\s\S]*?\n```$/gim, '')
+    .replace(/^```json\n[\s\S]*?\n```/gim, '')
+    .replace(/```json[\s\S]*?```/gi, '')
+    .replace(/^\s*\{.*\}\s*$/g, '')
+    .replace(/^\s*\[.*\]\s*$/g, '')
 }
 
 function clearContent() {
   markdownContent.value = ''
+  fullContent.value = ''
+  thinkingContent.value = ''
+  showJsonLoading.value = false
   originalContent.value = ''
   isDirty.value = false
 }
@@ -392,6 +457,19 @@ watch(() => props.content, (newContent) => {
     isDirty.value = false
   }
 }, { immediate: true })
+
+watch(() => props.isStreaming, (streaming) => {
+  if (!streaming) {
+    showCursor.value = false
+    showJsonLoading.value = false
+    thinkingContent.value = ''
+    const cleanContent = filterJsonContent(fullContent.value)
+      .replace(/^<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/^<think>/gi, '')
+      .replace(/^<\/think>/gi, '')
+    markdownContent.value = cleanContent.trim()
+  }
+})
 
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen && !markdownContent.value) {
@@ -413,7 +491,7 @@ onMounted(() => {
 defineExpose({
   appendContent,
   clearContent,
-  getContent: () => markdownContent.value
+  getContent: () => fullContent.value
 })
 </script>
 
@@ -422,7 +500,8 @@ defineExpose({
   padding: 0;
   display: flex;
   flex-direction: column;
-  height: calc(85vh - 60px);
+  min-height: calc(85vh - 60px);
+  height: 85vh;
 }
 
 .editor-toolbar {
@@ -474,6 +553,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   border-right: 1px solid #e4e7ed;
+  overflow-y: auto;
+  max-height: calc(80vh - 140px);
 }
 
 .markdown-textarea {
@@ -493,9 +574,132 @@ defineExpose({
   line-height: inherit;
 }
 
+.textarea-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+
+.streaming-content {
+  padding: 12px;
+  background: linear-gradient(90deg, #f0f9eb 0%, #e8f5e9 100%);
+  border-left: 3px solid #67c23a;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.streaming-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #67c23a;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.streaming-text {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #606266;
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.streaming-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  color: #909399;
+  font-size: 14px;
+}
+
+.streaming-placeholder.json-loading {
+  color: #409eff;
+  font-weight: 500;
+}
+
+.loading-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: #909399;
+}
+
+.thinking-wrapper {
+  border: 2px solid #e6a23c;
+  border-radius: 8px;
+  background: #fdf6ec;
+  padding: 12px;
+  margin: 8px;
+  min-height: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e6a23c;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.thinking-preview {
+  padding: 8px 12px;
+  background: #2d2d2d;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  color: #a8d8a8;
+  white-space: pre-wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  line-height: 1.3;
+  max-height: 150px;
+}
+
+.thinking-preview :deep(think) {
+  display: block;
+  margin: 8px 0;
+  padding: 12px;
+  background: #fffbe6;
+  border-left: 3px solid #e6a23c;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.streaming-cursor {
+  position: absolute;
+  bottom: 16px;
+  left: 14px;
+  color: #409eff;
+  font-weight: bold;
+  animation: blink 1s infinite;
+  pointer-events: none;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 .preview-pane {
   overflow-y: auto;
   background: #fff;
+  min-height: 300px;
+  flex-shrink: 0;
 }
 
 .preview-content {

@@ -51,6 +51,7 @@ export interface GenerateByStageRequest {
   provider?: 'ollama' | 'openai'
   baseUrl?: string
   apiKey?: string
+  responseFormat?: 'json-only' | 'markdown-only' | 'both'
 }
 
 export interface GenerateByStageResponse {
@@ -186,6 +187,86 @@ export async function generateContentByStage(
     model: modelConfig.id,
     duration: 0
   }
+}
+
+/**
+ * 流式生成 AI 内容 - SSE 版本
+ * 通过回调实时返回生成的文本片段
+ */
+export async function generateContentByStageStream(
+  stageId: string,
+  files: ProcessedFile[],
+  model: string | AIModel,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+  responseFormat: 'json-only' | 'markdown-only' | 'both' = 'markdown-only'
+): Promise<{ duration: number }> {
+  const modelConfig = typeof model === 'string'
+    ? getModelById(model) || { id: model, name: model, provider: 'ollama' as const }
+    : model
+
+  const requestBody: GenerateByStageRequest = {
+    stageId,
+    files,
+    model: modelConfig.id,
+    provider: modelConfig.provider,
+    baseUrl: modelConfig.baseUrl,
+    apiKey: modelConfig.apiKey,
+    responseFormat
+  }
+
+  const response = await fetch(`${SERVER_BASE_URL}/api/generate-by-stage?stream=true`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody),
+    signal
+  })
+
+  if (!response.ok) {
+    throw new Error(`Server error: ${response.status}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Response body is not readable')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullResponse = ''
+  let duration = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6)
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed.type === 'chunk' && parsed.content) {
+            fullResponse += parsed.content
+            onChunk(parsed.content)
+          } else if (parsed.type === 'done') {
+            duration = parsed.duration
+          } else if (parsed.type === 'error') {
+            throw new Error(parsed.error)
+          }
+        } catch {
+          // Skip non-JSON lines
+        }
+      }
+    }
+  }
+
+  return { duration }
 }
 
 // Re-export AIModel for external use

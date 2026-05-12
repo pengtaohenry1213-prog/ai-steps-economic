@@ -149,3 +149,128 @@ export function setOllamaBaseUrl(url: string): void {
   // Note: In production, you might want to store this in a config or env variable
   console.warn('Dynamic base URL change is not implemented. Use OLLAMA_BASE_URL environment variable.')
 }
+
+/**
+ * Stream Ollama API response - returns SSE chunks via callback
+ */
+export async function generateTextStreamOllama(
+  model: string,
+  prompt: string,
+  options: GenerateOptions = {},
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options }
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      prompt,
+      stream: true,
+      options: mergedOptions,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Ollama API error: ${response.status} ${response.statusText}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Response body is not readable')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const data = JSON.parse(line)
+          if (data.response) {
+            onChunk(data.response)
+          }
+        } catch {
+          // Skip non-JSON lines
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Stream OpenAI-compatible API response - returns SSE chunks via callback
+ */
+export async function generateTextStreamOpenAI(
+  model: string,
+  prompt: string,
+  baseUrl: string,
+  apiKey: string,
+  options: GenerateOptions = {},
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: mergedOptions.temperature ?? 0.7,
+      max_tokens: mergedOptions.num_predict ?? 4096,
+      stream: true
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`OpenAI API error ${response.status}: ${errorText}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Response body is not readable')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6)
+        if (data === '[DONE]') break
+
+        try {
+          const parsed = JSON.parse(data)
+          const content = parsed.choices?.[0]?.delta?.content
+          if (content) {
+            onChunk(content)
+          }
+        } catch {
+          // Skip non-JSON lines
+        }
+      }
+    }
+  }
+}

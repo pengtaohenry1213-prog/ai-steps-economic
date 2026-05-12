@@ -13,8 +13,8 @@
         <el-button size="small" @click="setViewMode('preview')" :type="viewMode === 'preview' ? 'primary' : ''">
           预览
         </el-button>
-        <el-button size="small" @click="setViewMode('json')" :type="viewMode === 'json' ? 'primary' : ''">
-          源码
+        <el-button size="small" @click="setViewMode('edit')" :type="viewMode === 'edit' ? 'primary' : ''">
+          编辑
         </el-button>
       </el-button-group>
       <div v-if="props.analysisResult" class="toolbar-right">
@@ -35,8 +35,24 @@
 
     <!-- 内容区域 -->
     <div class="content-area" :class="{ 'source-mode': viewMode === 'json' }">
+      <!-- 流式输出状态 -->
+      <div v-if="isStreamingOutput" class="streaming-container">
+        <div class="streaming-header">
+          <el-icon class="is-loading" :size="16"><Loading /></el-icon>
+          <span>AI 分析中...</span>
+        </div>
+        <div v-if="streamingThinkingContent" class="streaming-thinking">
+          <div class="thinking-label">
+            <el-icon class="is-loading" :size="12"><Loading /></el-icon>
+            <span>思考中</span>
+          </div>
+          <div class="thinking-text" v-html="renderThinkingContent(streamingThinkingContent)"></div>
+        </div>
+        <div class="streaming-content markdown-body" v-html="renderMarkdown(streamingMarkdownContent)"></div>
+      </div>
+
       <!-- 加载中状态 -->
-      <div v-if="isLoading" class="loading-container">
+      <div v-else-if="isLoading" class="loading-container">
         <div class="loading-animation">
           <el-icon class="is-loading" :size="48"><Loading /></el-icon>
         </div>
@@ -78,9 +94,15 @@
         <div v-html="renderedContent"></div>
       </div>
 
-      <!-- 源码模式 (JSON) -->
-      <div v-else class="json-source">
-        <pre><code>{{ rawContent }}</code></pre>
+      <!-- 编辑模式 -->
+      <div v-else-if="viewMode === 'edit'" class="edit-mode">
+        <el-input
+          v-model="editContent"
+          type="textarea"
+          :rows="20"
+          placeholder="编辑分析报告内容..."
+          class="edit-textarea"
+        />
       </div>
     </div>
 
@@ -88,7 +110,7 @@
     <div class="dialog-footer">
       <!-- 开始分析按钮 -->
       <el-button
-        v-if="!analysisResult && !isLoading"
+        v-if="!props.analysisResult && !isLoading"
         type="primary"
         :loading="isLoading"
         @click="handleStartAnalysis"
@@ -107,9 +129,9 @@
       </el-button>
 
       <!-- 已完成时的操作 -->
-      <template v-if="analysisResult && !isLoading">
+      <template v-if="props.analysisResult && !isLoading">
         <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirm">
+        <el-button type="primary" @click="handleConfirm" :disabled="props.isStreaming || !props.analysisResult">
           <el-icon class="el-icon--left"><Check /></el-icon>
           确认并保存为需求文档
         </el-button>
@@ -127,6 +149,7 @@ import type { GapAnalysisResult } from '../types'
 interface Props {
   modelValue: boolean
   analysisResult: GapAnalysisResult | null
+  isStreaming?: boolean
 }
 
 interface Emits {
@@ -139,7 +162,9 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const viewMode = ref<'preview' | 'json'>('preview')
+const viewMode = ref<'preview' | 'edit'>('preview')
+const streamingThinkingContent = ref('')
+const editContent = ref('')
 
 const visible = computed({
   get: () => props.modelValue,
@@ -148,8 +173,33 @@ const visible = computed({
 
 const dialogTitle = computed(() => '需求差距分析报告')
 
-// 加载状态：弹窗打开但没有分析结果时显示加载动画
-const isLoading = computed(() => props.modelValue && !props.analysisResult)
+// 加载状态：弹窗打开但没有分析结果且不在流式输出时显示加载动画
+const isLoading = computed(() => props.modelValue && !props.analysisResult && !props.isStreaming)
+
+// 流式输出状态：显示实时流式内容
+const isStreamingOutput = computed(() => {
+  if (props.modelValue && props.isStreaming && props.analysisResult?.fullText !== undefined) {
+    // 实时解析 think 内容
+    const fullText = props.analysisResult.fullText
+    const thinkMatches = fullText.match(/<think>[\s\S]*?<\/think>/gi)
+    if (thinkMatches) {
+      const processed = thinkMatches.join('\n')
+        .replace(/<\/think>/gi, '')
+        .replace(/<think>/gi, '')
+      const lines = processed.split('\n').filter(l => l.trim())
+      streamingThinkingContent.value = lines.slice(-3).join('\n')
+    }
+    return true
+  }
+  return false
+})
+
+// 流式输出时过滤后的正文内容（去掉 think 标签）
+const streamingMarkdownContent = computed(() => {
+  if (!props.analysisResult?.fullText) return ''
+  return props.analysisResult.fullText
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+})
 
 const rawContent = computed(() => {
   return JSON.stringify(props.analysisResult, null, 2)
@@ -160,8 +210,14 @@ const renderedContent = computed(() => {
   return renderAnalysisResult(props.analysisResult)
 })
 
-function setViewMode(mode: 'preview' | 'json') {
+function setViewMode(mode: 'preview' | 'edit') {
   viewMode.value = mode
+  if (mode === 'edit' && props.analysisResult?.fullText) {
+    editContent.value = props.analysisResult.fullText
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<think>/gi, '')
+      .replace(/<\/think>/gi, '')
+  }
 }
 
 function renderAnalysisResult(result: GapAnalysisResult): string {
@@ -230,18 +286,21 @@ function renderMarkdown(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return ''
 
-  // 检查是否是标准 Markdown 格式（以 # 开头）
-  const isMarkdown = /^#{1,6}\s+\S/.test(trimmed)
+  const cleaned = trimmed
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .replace(/<\/think>/gi, '')
 
-  // 检查是否是有序列表开头的格式（如 "1. 项目基本信息"）
-  const isNumberedList = /^\d+\.\s+\S/.test(trimmed)
+  if (!cleaned) return ''
+
+  const isMarkdown = /^#{1,6}\s+\S/.test(cleaned)
+  const isNumberedList = /^\d+\.\s+\S/.test(cleaned)
 
   if (!isMarkdown && !isNumberedList) {
-    // 非 Markdown 格式，显示为预格式化文本
-    return `<pre class="raw-text">${escapeHtml(trimmed)}</pre>`
+    return `<pre class="raw-text">${escapeHtml(cleaned)}</pre>`
   }
 
-  let html = trimmed
+  let html = cleaned
 
   // 处理有序列表标题（1. xxx 格式）
   html = html.replace(/^(\d+)\.\s+(.*$)/gm, '<h2>$2</h2>')
@@ -273,6 +332,12 @@ function renderMarkdown(text: string): string {
     .replace(/(<\/[hl][^>]*)>(<p>)/g, '$1')
 
   return html
+}
+
+function renderThinkingContent(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/\n/g, '<br/>')
 }
 
 function escapeHtml(text: string): string {
@@ -384,6 +449,15 @@ watch(() => props.modelValue, (newVal) => {
     viewMode.value = 'preview'
   }
 })
+
+watch(() => props.analysisResult, (result) => {
+  if (result?.fullText && viewMode.value === 'edit') {
+    editContent.value = result.fullText
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<think>/gi, '')
+      .replace(/<\/think>/gi, '')
+  }
+})
 </script>
 
 <style scoped>
@@ -407,6 +481,72 @@ watch(() => props.modelValue, (newVal) => {
   min-height: 0;
   overflow-y: auto;
   border-radius: 8px;
+}
+
+/* 流式输出容器 */
+.streaming-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: #f0f9eb;
+  border: 2px solid #67c23a;
+  border-radius: 8px;
+  min-height: 300px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.streaming-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #67c23a;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.streaming-content {
+  padding: 16px;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.streaming-content :deep(h1) { font-size: 1.4rem; margin: 0 0 1rem; }
+.streaming-content :deep(h2) { font-size: 1.2rem; margin: 1rem 0 0.75rem; }
+.streaming-content :deep(h3) { font-size: 1.1rem; margin: 0.75rem 0 0.5rem; }
+.streaming-content :deep(p) { margin: 0.5rem 0; }
+.streaming-content :deep(li) { margin: 0.3rem 0; }
+.streaming-content :deep(strong) { font-weight: 600; }
+
+/* 流式输出中的思考内容 */
+.streaming-thinking {
+  padding: 10px 14px;
+  background: #2d2d2d;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.thinking-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e6a23c;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.thinking-text {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #a8d8a8;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  max-height: 100px;
 }
 
 /* 加载动画容器 */
@@ -499,6 +639,8 @@ watch(() => props.modelValue, (newVal) => {
   background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 8px;
+  overflow-y: auto;
+  max-height: calc(80vh - 200px);
 }
 
 .json-source {
@@ -515,6 +657,36 @@ watch(() => props.modelValue, (newVal) => {
   font-size: 13px;
   line-height: 1.6;
   color: #d4d4d4;
+}
+
+/* 编辑模式 */
+.edit-mode {
+  display: flex;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.edit-textarea {
+  flex: 1;
+  min-height: 0;
+}
+
+.edit-textarea :deep(.el-textarea) {
+  height: 100%;
+}
+
+.edit-textarea :deep(.el-textarea__inner) {
+  height: 100%;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #3c3c3c;
+  resize: none;
 }
 
 /* 分析结果样式 */

@@ -275,6 +275,7 @@
     />
     <DocumentEditorSimple
       v-else
+      ref="simpleEditorRef"
       v-model="showDocumentEditor"
       :content="editorMarkdownContent"
       :stage-name="editorStageName"
@@ -290,6 +291,7 @@
     <GapAnalysisViewer
       v-model="showAnalysisResult"
       :analysis-result="analysisResult"
+      :is-streaming="analysisIsStreaming"
       @confirm="handleAnalysisConfirm"
       @start-analysis="doAIAnalysis"
       @cancel="handleAnalysisCancel"
@@ -361,7 +363,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLifecycleStore } from '../stores/lifecycleStore'
 import { useWorkflowStore } from '../stores/workflowStore'
-import { generateContentByStage, testOllamaConnection } from '../services/ollamaService'
+import { generateContentByStage, generateContentByStageStream, testOllamaConnection } from '../services/ollamaService'
 import { processFiles, getFileWarnings } from '../services/fileProcessor'
 import { extractJsonFromMarkdown } from '../services/documentNormalizer'
 import GapAnalysisViewer from '../components/GapAnalysisViewer.vue'
@@ -378,6 +380,7 @@ import {
 const store = useLifecycleStore()
 const workflowStore = useWorkflowStore()
 const modelSelectorRef = ref<InstanceType<typeof ModelSelector> | null>(null)
+const simpleEditorRef = ref<InstanceType<typeof DocumentEditorSimple> | null>(null)
 
 onMounted(async () => {
   // 优先从快照恢复（包含完整的 lifecycle + workflow 状态）
@@ -416,6 +419,7 @@ const editorReadOnly = ref(false)
 const editorLoadingText = ref('加载中...')
 const showAnalysisResult = ref(false)
 const analysisResult = ref<GapAnalysisResult | null>(null)
+const analysisIsStreaming = ref(false)
 const useSimpleEditor = ref(true)
 
 // 获取当前选择的模型
@@ -701,16 +705,28 @@ async function startAIGeneration() {
       editorReadOnly.value = false
       editorLoadingText.value = 'AI 分析中，请稍候...'
       showDocumentEditor.value = true
+      // 清空编辑器内容
+      simpleEditorRef.value?.clearContent()
     }
 
     // 根据阶段类型生成内容（会自动选择对应的 Prompt 模板）
     const currentModel = getCurrentModel()
-    const aiResult = await generateContentByStage(stageId, processed.files, currentModel || 'deepseek-r1', abortController.value.signal)
 
     if (useSimpleEditor.value) {
-      // 简单编辑器模式：直接使用 markdown 内容
-      editorMarkdownContent.value = aiResult.markdownText || aiResult.jsonText || ''
+      // 流式模式：实时追加内容到编辑器
+      const { duration } = await generateContentByStageStream(
+        stageId,
+        processed.files,
+        currentModel || 'deepseek-r1',
+        (chunk) => {
+          simpleEditorRef.value?.appendContent(chunk)
+        },
+        abortController.value.signal
+      )
+      editorMarkdownContent.value = simpleEditorRef.value?.getContent() || ''
     } else {
+      // 非流式模式（结构化编辑器）
+      const aiResult = await generateContentByStage(stageId, processed.files, currentModel || 'deepseek-r1', abortController.value.signal)
       // 结构化编辑器模式：解析为 ProposalContent
       let structuredData: Record<string, unknown> | undefined
       if (aiResult.jsonText) {
@@ -1187,24 +1203,113 @@ function handleEditorComplete() {
   }).catch(() => {})
 }
 
-function handleSimpleEditorSave(content: string) {
+async function handleSimpleEditorSave(content: string) {
   const stageId = currentProposalStage.value?.id || currentUploadStageId.value
+  const existingContent = store.stages.find(s => s.id === stageId)?.proposalContent || {}
+  const filteredContent = content
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .replace(/<\/think>/gi, '')
   const markdownContent: ProposalContent = {
-    fullText: content
+    ...existingContent,
+    fullText: filteredContent
   }
-  store.saveProposalContent(stageId, markdownContent)
-  ElMessage.success('文档已保存')
+  const success = await store.saveProposalContent(stageId, markdownContent)
+  if (success) {
+    ElMessage.success('文档已保存到数据库')
+  }
 }
 
 function viewDocument(stage: any) {
-  if (stage.proposalContent) {
-    editorDocument.value = stage.proposalContent
+  if (!stage?.proposalContent) return
+  try {
+    const content = stage.proposalContent
+    if (!content || typeof content !== 'object') {
+      throw new Error('Invalid proposalContent')
+    }
+    editorDocument.value = content
+
+    // 如果 fullText 存在且有内容，直接使用；否则从结构化字段生成
+    if (content.fullText && content.fullText.trim().length > 0) {
+      editorMarkdownContent.value = content.fullText
+    } else {
+      // 从结构化数据生成 markdown
+      editorMarkdownContent.value = renderStructuredToMarkdown(content)
+    }
+
     editorStageName.value = stage.id
-    editorTitle.value = ''
+    editorTitle.value = content.name || ''
     editorReadOnly.value = true
     editorLoadingText.value = '加载文档...'
     showDocumentEditor.value = true
+  } catch (e) {
+    console.error('Failed to load proposalContent:', e)
+    ElMessage.error('文档加载失败，请检查数据完整性')
   }
+}
+
+// 将结构化 proposalContent 转换为 markdown
+function renderStructuredToMarkdown(content: any): string {
+  let md = ''
+
+  if (content.name) {
+    md += `# ${content.name}\n\n`
+  }
+  if (content.background) {
+    md += `## 项目背景\n\n${content.background}\n\n`
+  }
+  if (content.currentIssues && content.currentIssues.length > 0) {
+    md += `## 当前问题\n\n`
+    content.currentIssues.forEach((item: string) => {
+      md += `- ${item}\n`
+    })
+    md += '\n'
+  }
+  if (content.goals && content.goals.length > 0) {
+    md += `## 项目目标\n\n`
+    content.goals.forEach((item: string) => {
+      md += `- ${item}\n`
+    })
+    md += '\n'
+  }
+  if (content.scope) {
+    md += `## 项目范围\n\n`
+    if (content.scope.inScope && content.scope.inScope.length > 0) {
+      md += `### In Scope\n\n`
+      const inScope = content.scope.inScope
+      if (Array.isArray(inScope)) {
+        inScope.forEach((item: string) => md += `- ${item}\n`)
+      } else if (typeof inScope === 'object') {
+        for (const [priority, items] of Object.entries(inScope)) {
+          if (Array.isArray(items) && items.length > 0) {
+            md += `**${priority}**\n`
+            items.forEach((item: string) => md += `- ${item}\n`)
+          }
+        }
+      }
+      md += '\n'
+    }
+    if (content.scope.outScope && content.scope.outScope.length > 0) {
+      md += `### Out of Scope\n\n`
+      content.scope.outScope.forEach((item: string) => md += `- ${item}\n`)
+      md += '\n'
+    }
+  }
+  if (content.acceptance) {
+    md += `## 验收标准\n\n${content.acceptance}\n\n`
+  }
+  if (content.milestones) {
+    md += `## 里程碑\n\n${content.milestones}\n\n`
+  }
+  if (content.risks && content.risks.length > 0) {
+    md += `## 风险\n\n`
+    content.risks.forEach((risk: any) => {
+      md += `- **${risk.description || risk.name}**: ${risk.level || ''} - ${risk.mitigation || ''}\n`
+    })
+    md += '\n'
+  }
+
+  return md || '# 无内容'
 }
 
 function hasProposalContent(stageId: string): boolean {
@@ -1518,18 +1623,47 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
 
     const processed = processFiles(files, 'requirement')
     const currentModel = getCurrentModel()
-    const aiResult = await generateContentByStage('requirement_analysis', processed.files, currentModel || 'deepseek-r1', analysisAbortController.signal)
+    let fullText = ''
+    analysisIsStreaming.value = true
 
-    // 尝试解析 AI 返回的 JSON 数据
-    const parsed = parseAIAnalysisResponse(aiResult.rawText)
+    // 先设置一个空的 analysisResult，让 GapAnalysisViewer 知道开始流式输出了
+    analysisResult.value = {
+      fullText: '',
+      hasCovered: [],
+      missingSuggestions: [],
+      bestPractices: [],
+      summary: ''
+    }
+
+    await generateContentByStageStream(
+      'requirement_analysis',
+      processed.files,
+      currentModel || 'deepseek-r1',
+      (chunk) => {
+        fullText += chunk
+        // 流式更新 analysisResult，让 UI 实时显示内容
+        analysisResult.value = {
+          fullText,
+          hasCovered: [],
+          missingSuggestions: [],
+          bestPractices: [],
+          summary: ''
+        }
+      },
+      analysisAbortController.signal,
+      'markdown-only'
+    )
+
+    const parsed = parseAIAnalysisResponse(fullText)
 
     analysisResult.value = {
-      fullText: aiResult.rawText,
+      fullText,
       hasCovered: parsed.hasCovered || [],
       missingSuggestions: parsed.missingSuggestions || [],
       bestPractices: parsed.bestPractices || [],
       summary: parsed.summary || ''
     }
+    analysisIsStreaming.value = false
   } catch (error) {
     // 如果是取消请求，不显示错误
     if (error instanceof Error && error.name === 'AbortError') {
@@ -1540,6 +1674,7 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
     ElMessage.error('AI 分析失败，请检查 Ollama 服务')
   } finally {
     analysisAbortController = null
+    analysisIsStreaming.value = false
   }
 }
 
@@ -1550,6 +1685,7 @@ function handleAnalysisCancel() {
     analysisAbortController = null
   }
   analysisResult.value = null
+  analysisIsStreaming.value = false
   showAnalysisResult.value = false
   ElMessage.info('已取消 AI 分析')
 }
@@ -1557,8 +1693,14 @@ function handleAnalysisCancel() {
 function parseAIAnalysisResponse(response: string): Partial<GapAnalysisResult> {
   const result: Partial<GapAnalysisResult> = {}
 
+  // 先过滤掉 think 标签
+  const cleaned = response
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .replace(/<\/think>/gi, '')
+
   // 尝试提取 JSON 块
-  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/i)
+  const jsonMatch = cleaned.match(/```json\s*([\s\S]*?)\s*```/i)
 
   if (jsonMatch) {
     try {
@@ -1586,7 +1728,7 @@ function parseAIAnalysisResponse(response: string): Partial<GapAnalysisResult> {
 
       // 如果有完整的 Markdown 内容，用它覆盖 fullText
       // 查找 JSON 块之后的内容（通常是 Markdown）
-      const markdownPart = response.slice(jsonMatch[0].length).trim()
+      const markdownPart = cleaned.slice(jsonMatch[0].length).trim()
       if (markdownPart && markdownPart.startsWith('#')) {
         result.fullText = markdownPart
       }
@@ -1598,7 +1740,7 @@ function parseAIAnalysisResponse(response: string): Partial<GapAnalysisResult> {
   }
 
   // 如果没有 JSON，尝试从 Markdown 中提取结构化数据
-  const lines = response.split('\n')
+  const lines = cleaned.split('\n')
   let currentSection = ''
 
   for (const line of lines) {
@@ -1648,10 +1790,16 @@ function parseAIAnalysisResponse(response: string): Partial<GapAnalysisResult> {
   return result
 }
 
+// 确认并保存为需求文档
 function handleAnalysisConfirm(result: GapAnalysisResult) {
+  const filteredFullText = (result.fullText || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>/gi, '')
+    .replace(/<\/think>/gi, '')
+
   const requirementDoc: ProposalContent = {
     name: '需求文档 (PRD)',
-    fullText: result.fullText || '',
+    fullText: filteredFullText,
     background: `需求分析报告\n\n${result.summary || ''}`,
     scope: {
       inScope: result.hasCovered || [],

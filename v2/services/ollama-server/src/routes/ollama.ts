@@ -7,6 +7,8 @@ import { Router } from 'express'
 import {
   generateText,
   generateTextOpenAI,
+  generateTextStreamOllama,
+  generateTextStreamOpenAI,
   testConnection,
   getModels,
 } from '../services/ollama.js'
@@ -97,10 +99,12 @@ router.post('/api/generate', async (req, res) => {
  * Generate content based on stage type (integrated with prompt builder)
  * Supports both Ollama (local) and OpenAI-compatible (external) models
  * Returns normalized StandardResponse format
+ * Query param: stream=true for SSE streaming response
  */
 router.post('/api/generate-by-stage', async (req, res) => {
   const startTime = Date.now()
   const requestId = Math.random().toString(36).substring(2, 8)
+  const useStream = req.query.stream === 'true'
 
   try {
     const {
@@ -131,6 +135,7 @@ router.post('/api/generate-by-stage', async (req, res) => {
     console.log(`[${requestId}]   stageId: ${stageId}`)
     console.log(`[${requestId}]   model: ${model}`)
     console.log(`[${requestId}]   provider: ${provider}`)
+    console.log(`[${requestId}]   stream: ${useStream}`)
     if (provider === 'openai') {
       console.log(`[${requestId}]   baseUrl: ${baseUrl}`)
       console.log(`[${requestId}]   apiKey: ${maskedApiKey}`)
@@ -144,7 +149,55 @@ router.post('/api/generate-by-stage', async (req, res) => {
     // Get expected JSON schema for this prompt type
     const jsonSchema = getJsonSchema(promptType)
 
-    // Generate content based on provider
+    // Streaming mode - use SSE
+    if (useStream) {
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+
+      const sendChunk = (chunk: string) => {
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`)
+      }
+
+      const sendDone = (duration: number) => {
+        res.write(`data: ${JSON.stringify({ type: 'done', duration })}\n\n`)
+        res.end()
+      }
+
+      const sendError = (error: string) => {
+        res.write(`data: ${JSON.stringify({ type: 'error', error })}\n\n`)
+        res.end()
+      }
+
+      try {
+        const genStart = Date.now()
+        let fullResponse = ''
+
+        if (provider === 'openai' && baseUrl && apiKey) {
+          console.log(`[${requestId}]   streaming: OpenAI-compatible API (${baseUrl})`)
+          await generateTextStreamOpenAI(model, prompt, baseUrl, apiKey, {}, (chunk) => {
+            fullResponse += chunk
+            sendChunk(chunk)
+          })
+        } else {
+          console.log(`[${requestId}]   streaming: Ollama`)
+          await generateTextStreamOllama(model, prompt, {}, (chunk) => {
+            fullResponse += chunk
+            sendChunk(chunk)
+          })
+        }
+
+        const genDuration = Date.now() - genStart
+        console.log(`[${requestId}]   [STREAM COMPLETE] ${fullResponse.length} chars in ${genDuration}ms`)
+        sendDone(genDuration)
+      } catch (err) {
+        sendError(err instanceof Error ? err.message : 'Stream failed')
+      }
+      return
+    }
+
+    // Non-streaming mode (original behavior)
     let response: string
     let genDuration: number
 

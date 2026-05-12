@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { ElMessage } from 'element-plus'
 import type { LifecycleStage, LifecycleStageStatus, Step, Todo, ProposalContent } from '../types'
 import { LIFECYCLE_STAGES, LIFECYCLE_STEP_TEMPLATES } from '../types'
 import { saveProposal, loadProposal, deleteProposal as deleteProposalFromDb } from '../services/proposalService'
@@ -148,12 +149,35 @@ export const useLifecycleStore = defineStore('lifecycle', {
       }
     },
 
-    // 仅保存到 localStorage，不保存到 Supabase
-    saveProposalContent(stageId: string, content: ProposalContent | null) {
+    // 保存到 Supabase 和 localStorage
+    async saveProposalContent(stageId: string, content: ProposalContent | null): Promise<boolean> {
+      if (!content) return false
+
       const stage = this.stages.find(s => s.id === stageId)
-      if (stage) {
+      if (!stage) return false
+
+      try {
+        const title = extractTitle(content)
+        const { error } = await saveProposal({
+          projectId: PROJECT_ID,
+          stageId,
+          title,
+          content
+        })
+
+        if (error) {
+          console.error('Failed to save proposal to Supabase:', error)
+          ElMessage.error('保存失败：' + error.message)
+          return false
+        }
+
         stage.proposalContent = content
         this.saveToStorage()
+        return true
+      } catch (err) {
+        console.error('Failed to save proposal:', err)
+        ElMessage.error('保存失败')
+        return false
       }
     },
 
@@ -437,8 +461,12 @@ function initializeStages(): LifecycleStage[] {
 function loadFromStorage(): Partial<LifecycleState> {
   try {
     const data = localStorage.getItem(STORAGE_KEY)
-    return data ? JSON.parse(data) : {}
-  } catch {
+    if (!data) return {}
+    const parsed = JSON.parse(data)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return parsed
+  } catch (e) {
+    console.error('Failed to parse localStorage data:', e)
     return {}
   }
 }

@@ -5,6 +5,7 @@
     :width="dialogWidth"
     top="5vh"
     :close-on-click-modal="false"
+    style="height: 80vh"
     class="document-editor-dialog"
   >
     <!-- 工具栏 -->
@@ -42,7 +43,7 @@
     </div>
 
     <!-- 内容区域 -->
-    <div v-else class="content-area" :class="{ 'source-mode': viewMode === 'source' }">
+    <div v-else class="content-area">
       <!-- 预览模式 -->
       <template v-if="viewMode === 'preview'">
         <div class="preview-content markdown-body">
@@ -572,6 +573,7 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   border-radius: 8px;
+  max-height: calc(100% - 60px);
 }
 
 .loading-state {
@@ -589,83 +591,35 @@ defineExpose({
 }
 
 .preview-content {
-  max-height: calc(80vh - 200px);
-  overflow-y: auto;
   padding: 24px;
   background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 8px;
-}
-
-/* 预览区域滚动条样式 */
-.preview-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.preview-content::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
-}
-
-.preview-content::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-}
-
-.preview-content::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  box-sizing: border-box;
 }
 
 .edit-mode-content {
   min-height: 400px;
-  max-height: calc(80vh - 200px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 /* 自定义滚动条样式 */
-.edit-mode-content::-webkit-scrollbar,
-.edit-mode-content :deep(.el-tabs__content)::-webkit-scrollbar,
-.edit-mode-content :deep(.el-tab-pane)::-webkit-scrollbar {
+.content-area::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 
-.edit-mode-content::-webkit-scrollbar-track,
-.edit-mode-content :deep(.el-tabs__content)::-webkit-scrollbar-track,
-.edit-mode-content :deep(.el-tab-pane)::-webkit-scrollbar-track {
+.content-area::-webkit-scrollbar-track {
   background: #f1f1f1;
   border-radius: 4px;
 }
 
-.edit-mode-content::-webkit-scrollbar-thumb,
-.edit-mode-content :deep(.el-tabs__content)::-webkit-scrollbar-thumb,
-.edit-mode-content :deep(.el-tab-pane)::-webkit-scrollbar-thumb {
+.content-area::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 4px;
 }
 
-.edit-mode-content::-webkit-scrollbar-thumb:hover,
-.edit-mode-content :deep(.el-tabs__content)::-webkit-scrollbar-thumb:hover,
-.edit-mode-content :deep(.el-tab-pane)::-webkit-scrollbar-thumb:hover {
+.content-area::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
-}
-
-.edit-mode-content :deep(.el-tabs__content) {
-  overflow-y: auto;
-  max-height: calc(80vh - 280px);
-  padding: 16px;
-}
-
-.edit-mode-content :deep(.el-tab-pane) {
-  overflow-y: auto;
-  max-height: calc(80vh - 320px);
-}
-
-.source-mode .content-area {
-  background: #1e1e1e;
-  padding: 16px;
-  border-radius: 8px;
 }
 
 .json-source {
@@ -679,7 +633,6 @@ defineExpose({
 /* JSON 源码区域滚动条样式 */
 .json-source::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 
 .json-source::-webkit-scrollbar-track {
@@ -904,9 +857,5 @@ defineExpose({
 .markdown-body :deep(strong) {
   font-weight: 600;
   color: #303133;
-}
-
-:deep(.el-tab-pane) {
-  padding: 16px 0;
 }
 </style>
