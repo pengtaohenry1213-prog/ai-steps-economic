@@ -5,6 +5,7 @@ import { LIFECYCLE_STAGES, LIFECYCLE_STEP_TEMPLATES } from '../types'
 import { saveProposal, loadProposal, deleteProposal as deleteProposalFromDb } from '../services/proposalService'
 import { saveSnapshot, loadLatestSnapshot, deleteAllSnapshots } from '../services/lifecycleSnapshotService'
 import { validateDocument, getRequiredFields, getCompletenessScore } from '../schemas/documentSchemas'
+import { generateProjectFiles, generateCursorRules, type GeneratedFile } from '../services/projectGenerator'
 
 const STORAGE_KEY = 'lifecycle_dashboard_state'
 const PROJECT_ID = 'default-project'
@@ -355,7 +356,7 @@ export const useLifecycleStore = defineStore('lifecycle', {
       return null
     },
 
-    resetLifecycle(workflowStore?: { clearAllSteps: () => void }) {
+    async resetLifecycle(workflowStore?: { clearAllSteps: () => void }) {
       this.stages = initializeStages()
       this.currentStageId = 'init'
       this.saveToStorage()
@@ -364,7 +365,8 @@ export const useLifecycleStore = defineStore('lifecycle', {
         workflowStore.clearAllSteps()
       }
 
-      this.deleteAllProposals()
+      await this.deleteAllProposals()
+      await deleteAllSnapshots(PROJECT_ID)
     },
 
     async deleteAllProposals() {
@@ -437,6 +439,114 @@ export const useLifecycleStore = defineStore('lifecycle', {
       }
     },
 
+    async executeInitialization(): Promise<{ success: boolean; files: GeneratedFile[] }> {
+      const architectureStage = this.stages.find(s => s.id === 'architecture')
+      console.log('[Initialization] architectureStage:', architectureStage)
+      console.log('[Initialization] proposalContent:', architectureStage?.proposalContent)
+
+      if (!architectureStage?.proposalContent) {
+        ElMessage.warning('未找到架构文档，请先完成架构阶段')
+        return { success: false, files: [] }
+      }
+
+      const archDoc = architectureStage.proposalContent as unknown as {
+        fullText?: string
+        name?: string
+        overview?: string
+        techStack?: string[]
+        architectureType?: string
+        components?: string[]
+        steps?: Array<{ id: string; title: string; target: string; constraints: string[]; acceptance: string[]; files: string[]; dependsOn: string }>
+      }
+
+      console.log('[Initialization] archDoc fullText:', archDoc.fullText?.slice(0, 200))
+
+      // Get projectName from init stage first (where it was properly extracted from proposal)
+      const initStage = this.stages.find(s => s.id === 'init')
+      let projectName = initStage?.proposalContent?.name
+
+      // If not found in init stage, try architecture doc
+      if (!projectName) {
+        projectName = archDoc.name || archDoc.overview
+      }
+
+      // Fallback: extract from architecture markdown title
+      if (!projectName && archDoc.fullText) {
+        const nameMatch = archDoc.fullText.match(/^#\s+(.+)$/m)
+        if (nameMatch) {
+          // Remove common suffixes like "项目立项书", "架构设计文档", "需求文档", "项目架构", etc.
+          projectName = nameMatch[1]
+            .replace(/项目立项书$/, '')
+            .replace(/立项书$/, '')
+            .replace(/架构设计文档$/, '')
+            .replace(/需求文档$/, '')
+            .replace(/项目架构$/, '')
+            .replace(/项目需求$/, '')
+            .trim() || undefined
+        }
+      }
+
+      // Final fallback
+      if (!projectName) {
+        projectName = 'my-project'
+      }
+
+      let techStack = archDoc.techStack
+      let components = archDoc.components
+
+      if ((!techStack || techStack.length === 0) && archDoc.fullText) {
+        const techStackFromMd = extractTechStackFromMarkdown(archDoc.fullText)
+        techStack = techStackFromMd.length > 0 ? techStackFromMd : ['Vue3', 'TypeScript', 'Vite', 'Pinia']
+      }
+
+      if ((!components || components.length === 0) && archDoc.fullText) {
+        components = extractComponentsFromMarkdown(archDoc.fullText)
+      }
+
+      console.log('[Initialization] extracted projectName:', projectName)
+      console.log('[Initialization] extracted techStack:', techStack)
+      console.log('[Initialization] extracted components:', components)
+
+      // Extract steps from architecture if not in structured data
+      let steps = archDoc.steps
+      if ((!steps || steps.length === 0) && archDoc.fullText) {
+        steps = extractStepsFromMarkdown(archDoc.fullText, components)
+      }
+      console.log('[Initialization] extracted steps:', steps?.length)
+
+      const normalizedProjectName = projectName.toLowerCase().replace(/\s+/g, '-')
+      const config = {
+        projectName: normalizedProjectName,
+        techStack: techStack || ['Vue3', 'TypeScript', 'Vite', 'Pinia'],
+        architectureType: archDoc.architectureType || 'SPA',
+        components: components || [],
+        outputPath: '/Users/taopeng/workspace/AI_2026/ai-steps-economic/v2/dev/'
+      }
+
+      console.log('[Initialization] config:', config)
+
+      try {
+        const generatedFiles = await generateProjectFiles(config)
+        console.log('[Initialization] generatedFiles count:', generatedFiles.length)
+        const cursorRules = generateCursorRules()
+
+        // Generate step documents from steps array
+        const stepFiles = generateStepDocuments(steps || [], components || [])
+
+        // All file paths are prefixed with projectName so the zip extracts to v2/dev/{projectName}/
+        const allFiles = [
+          ...generatedFiles.map(f => ({ ...f, path: `${projectName}/${f.path}` })),
+          ...cursorRules.map(r => ({ path: `${projectName}/${r.path}`, content: r.content })),
+          ...stepFiles.map(sf => ({ path: `${projectName}/${sf.path}`, content: sf.content }))
+        ]
+
+        return { success: true, files: allFiles }
+      } catch (err) {
+        console.error('Failed to generate project:', err)
+        return { success: false, files: [] }
+      }
+    },
+
     saveToStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         stages: this.stages,
@@ -472,6 +582,208 @@ function loadFromStorage(): Partial<LifecycleState> {
 }
 
 function extractTitle(content: ProposalContent): string {
-  const match = content.basicInfo?.match(/^#\s+(.+)/m)
-  return match ? match[1] : 'Untitled Proposal'
+  if (typeof content.basicInfo === 'string') {
+    const match = content.basicInfo.match(/^#\s+(.+)/m)
+    return match ? match[1] : 'Untitled Proposal'
+  }
+  return content.name || 'Untitled Proposal'
+}
+
+function extractTechStackFromMarkdown(markdown: string): string[] {
+  const techStack: string[] = []
+  const techPatterns = [
+    { pattern: /Vue3|Vue\s*3/i, tech: 'Vue3' },
+    { pattern: /TypeScript|TS\b/i, tech: 'TypeScript' },
+    { pattern: /Vite/i, tech: 'Vite' },
+    { pattern: /Pinia/i, tech: 'Pinia' },
+    { pattern: /TailwindCSS|Tailwind/i, tech: 'TailwindCSS' },
+    { pattern: /vxe-table|vxe-table/i, tech: 'vxe-table' },
+    { pattern: /HyperFormula|hyperformula/i, tech: 'HyperFormula' },
+    { pattern: /Vitest/i, tech: 'Vitest' },
+    { pattern: /Turborepo|turborepo/i, tech: 'Turborepo' },
+    { pattern: /Supabase/i, tech: 'Supabase' },
+    { pattern: /Yjs|Yjs/i, tech: 'Yjs' }
+  ]
+
+  for (const { pattern, tech } of techPatterns) {
+    if (pattern.test(markdown) && !techStack.includes(tech)) {
+      techStack.push(tech)
+    }
+  }
+
+  return techStack
+}
+
+function extractComponentsFromMarkdown(markdown: string): string[] {
+  const components: string[] = []
+
+  const sectionMatch = markdown.match(/##\s*3\.\s*核心组件设计|##\s*[Cc]omponents?/)
+  if (sectionMatch) {
+    const sectionStart = markdown.indexOf(sectionMatch[0])
+    const nextSection = markdown.indexOf('##', sectionStart + 10)
+    const sectionContent = nextSection > 0
+      ? markdown.slice(sectionStart, nextSection)
+      : markdown.slice(sectionStart)
+
+    const listItems = sectionContent.match(/^\d+[.)]\s*`.+?`|^-\s*`.+?`|^\*\s*`.+?`/gm)
+    if (listItems) {
+      for (const item of listItems) {
+        const match = item.match(/`([^`]+)`/)
+        if (match) {
+          components.push(match[1])
+        }
+      }
+    }
+  }
+
+  const componentNames = markdown.match(/(?:组件|模块|Component|Module)[:：]\s*([^\n]+)/gi)
+  if (componentNames) {
+    for (const name of componentNames) {
+      const match = name.match(/[:：]\s*([^\n]+)/)
+      if (match) {
+        const parts = match[1].split(/[,，、]/).map(p => p.trim()).filter(p => p)
+        components.push(...parts)
+      }
+    }
+  }
+
+  return [...new Set(components)]
+}
+
+interface StepInfo {
+  id: string
+  title: string
+  target: string
+  constraints: string[]
+  acceptance: string[]
+  files: string[]
+  dependsOn: string
+}
+
+function extractStepsFromMarkdown(markdown: string, components: string[]): StepInfo[] {
+  const steps: StepInfo[] = []
+
+  // Look for "Step N:" or "StepN:" patterns in the markdown
+  const stepMatches = markdown.matchAll(/^#{1,3}\s*Step\s*(\d+):?\s*(.+)$/gm)
+
+  for (const match of stepMatches) {
+    const stepNum = parseInt(match[1])
+    const stepTitle = match[2].trim()
+
+    // Extract content after this step header until the next step or section
+    const stepStart = match.index!
+    const nextStepMatch = markdown.slice(stepStart + match[0].length).match(/^#{1,3}\s*Step\s*\d+:/m)
+    const nextStepStart = nextStepMatch ? stepStart + match[0].length + (nextStepMatch.index || 0) : markdown.length
+    const stepContent = markdown.slice(stepStart, nextStepStart)
+
+    // Extract files mentioned in the step
+    const files: string[] = []
+    const fileMatches = stepContent.matchAll(/`([^`]+\.(vue|ts|tsx|js|jsx))`/g)
+    for (const fileMatch of fileMatches) {
+      files.push(fileMatch[1])
+    }
+
+    steps.push({
+      id: `step${stepNum}`,
+      title: stepTitle,
+      target: stepTitle,
+      constraints: [
+        '遵循前端工程化 SOP',
+        '遵循后端工程化 SOP',
+        '遵循数据库设计规范',
+        '遵循安全工程规范'
+      ],
+      acceptance: [
+        '功能可正常运行',
+        '单元测试覆盖率 > 70%',
+        '无安全漏洞'
+      ],
+      files: files.length > 0 ? files : [`src/views/${stepTitle}.vue`],
+      dependsOn: stepNum > 1 ? `step${stepNum - 1}` : ''
+    })
+  }
+
+  // If no steps found, generate from components
+  if (steps.length === 0 && components.length > 0) {
+    components.forEach((component, index) => {
+      steps.push({
+        id: `step${index + 1}`,
+        title: component,
+        target: `实现 ${component} 模块`,
+        constraints: [
+          '遵循前端工程化 SOP',
+          '遵循后端工程化 SOP',
+          '遵循数据库设计规范',
+          '遵循安全工程规范'
+        ],
+        acceptance: [
+          '功能可正常运行',
+          '单元测试覆盖率 > 70%',
+          '无安全漏洞'
+        ],
+        files: [`src/views/${component}.vue`],
+        dependsOn: index > 0 ? `step${index}` : ''
+      })
+    })
+  }
+
+  // Fallback: if still no steps, create a default step
+  if (steps.length === 0) {
+    steps.push({
+      id: 'step1',
+      title: '基础功能开发',
+      target: '实现项目基础功能模块',
+      constraints: [
+        '遵循前端工程化 SOP',
+        '遵循后端工程化 SOP',
+        '遵循数据库设计规范',
+        '遵循安全工程规范'
+      ],
+      acceptance: [
+        '功能可正常运行',
+        '单元测试覆盖率 > 70%',
+        '无安全漏洞'
+      ],
+      files: ['src/views/Home.vue'],
+      dependsOn: ''
+    })
+  }
+
+  return steps
+}
+
+interface StepFile {
+  path: string
+  content: string
+}
+
+function generateStepDocuments(steps: StepInfo[], components: string[]): StepFile[] {
+  const stepFiles: StepFile[] = []
+
+  for (const step of steps) {
+    const stepMarkdown = `# Step ${step.id.replace('step', '')}: ${step.title}
+
+## 任务目标
+${step.target}
+
+## 约束条件
+${step.constraints.map(c => `- ${c}`).join('\n')}
+
+## 验收标准
+${step.acceptance.map(a => `- [ ] ${a}`).join('\n')}
+
+## 涉及文件
+${step.files.map(f => `- ${f}`).join('\n')}
+
+## 前置依赖
+${step.dependsOn ? `- ${step.dependsOn}.md` : '- 无'}
+`
+
+    stepFiles.push({
+      path: `docs/steps/${step.id}.md`,
+      content: stepMarkdown
+    })
+  }
+
+  return stepFiles
 }

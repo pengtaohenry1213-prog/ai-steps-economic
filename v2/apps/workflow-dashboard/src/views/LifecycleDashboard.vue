@@ -1,5 +1,5 @@
 <template>
-  <div class="lifecycle-dashboard">
+  <div v-if="isReady" class="lifecycle-dashboard">
     <el-card shadow="hover" class="lifecycle-header-card">
       <template #header>
         <div class="card-header">
@@ -192,6 +192,16 @@
                   <el-icon><Refresh /></el-icon>
                   重新生成
                 </el-button>
+                <el-button
+                  v-if="stage.id === 'initialization' && stage.status === 'in_progress' && !stage.proposalContent"
+                  size="small"
+                  type="primary"
+                  @click="startProjectInitialization(stage.id)"
+                  :disabled="isGenerating || !hasProposalContent('architecture')"
+                >
+                  <el-icon><Connection /></el-icon>
+                  生成项目脚手架
+                </el-button>
               </div>
             </template>
           </el-card>
@@ -280,11 +290,13 @@
       :content="editorMarkdownContent"
       :stage-name="editorStageName"
       :stage-title="editorTitle"
+      :stage-status="editorStageStatus"
       :read-only="editorReadOnly"
       :is-streaming="isGenerating"
       :default-template="editorStageName === 'init' ? 'proposal' : 'requirement'"
       @update:content="editorMarkdownContent = $event"
       @save="handleSimpleEditorSave"
+      @start-generate="handleArchitectureStartGenerate"
     />
 
     <!-- AI 分析结果弹窗 -->
@@ -296,6 +308,65 @@
       @start-analysis="doAIAnalysis"
       @cancel="handleAnalysisCancel"
     />
+
+    <!-- Human Gate 审批对话框 -->
+    <el-dialog
+      v-model="showHumanGateDialog"
+      title="Human Gate 审批"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div class="human-gate-content">
+        <el-alert
+          title="进入 Human Gate 审批环节"
+          description="请确认文档内容符合要求，然后提交审批。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="hg-alert"
+        />
+
+        <div v-if="pendingCompleteStageId" class="hg-stage-info">
+          <el-tag size="large" type="primary">
+            {{ store.stages.find(s => s.id === pendingCompleteStageId)?.name }}
+          </el-tag>
+          <span class="hg-stage-desc">阶段文档审批</span>
+        </div>
+
+        <div class="hg-document-summary">
+          <div class="summary-title">文档摘要</div>
+          <div v-if="getStageDocumentSummary(pendingCompleteStageId)" class="summary-content">
+            {{ getStageDocumentSummary(pendingCompleteStageId) }}
+          </div>
+          <div v-else class="summary-empty">
+            文档内容已生成
+          </div>
+        </div>
+
+        <div class="hg-approvals">
+          <div class="approval-item">
+            <el-icon><User /></el-icon>
+            <span>PMO 审批</span>
+            <el-tag size="small" type="warning">待审批</el-tag>
+          </div>
+          <div class="approval-item">
+            <el-icon><Lock /></el-icon>
+            <span>Security 审批</span>
+            <el-tag size="small" type="warning">待审批</el-tag>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="cancelHumanGate">取消</el-button>
+          <el-button type="success" @click="confirmHumanGate">
+            <el-icon class="el-icon--left"><Check /></el-icon>
+            确认完成并进入下一阶段
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="showUploadDialog"
@@ -359,13 +430,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, shallowRef } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLifecycleStore } from '../stores/lifecycleStore'
 import { useWorkflowStore } from '../stores/workflowStore'
 import { generateContentByStage, generateContentByStageStream, testOllamaConnection } from '../services/ollamaService'
 import { processFiles, getFileWarnings } from '../services/fileProcessor'
 import { extractJsonFromMarkdown } from '../services/documentNormalizer'
+import { saveProjectToServer } from '../services/projectGenerator'
 import GapAnalysisViewer from '../components/GapAnalysisViewer.vue'
 import DocumentEditor from '../components/DocumentEditor.vue'
 import DocumentEditorSimple from '../components/DocumentEditorSimple.vue'
@@ -392,10 +464,11 @@ onMounted(async () => {
       workflowStore.initializeFromSnapshot(snapshot.workflowSteps)
     }
     store.saveToStorage()
-    return
+  } else {
+    // 如果没有快照，回退到原来的 proposals 表加载
+    await store.initializeFromDatabase()
   }
-  // 如果没有快照，回退到原来的 proposals 表加载
-  await store.initializeFromDatabase()
+  isReady.value = true
 })
 
 const FEEDBACK_TRIGGER_STAGES = ['testing', 'acceptance', 'packaging', 'deployment']
@@ -414,6 +487,7 @@ const showDocumentEditor = ref(false)
 const editorDocument = ref<ProposalContent | null>(null)
 const editorMarkdownContent = ref('')
 const editorStageName = ref('')
+const editorStageStatus = ref('')
 const editorTitle = ref('')
 const editorReadOnly = ref(false)
 const editorLoadingText = ref('加载中...')
@@ -421,6 +495,11 @@ const showAnalysisResult = ref(false)
 const analysisResult = ref<GapAnalysisResult | null>(null)
 const analysisIsStreaming = ref(false)
 const useSimpleEditor = ref(true)
+const isReady = ref(false)
+
+// Human Gate 审批相关
+const showHumanGateDialog = ref(false)
+const pendingCompleteStageId = ref<string | null>(null)
 
 // 获取当前选择的模型
 function getCurrentModel() {
@@ -588,9 +667,65 @@ function restartStage(stageId: string) {
 }
 
 function completeStage(stageId: string) {
+  const stage = store.stages.find(s => s.id === stageId)
+  if (!stage) return
+
+  // initialization 阶段：检查项目文件是否生成，跳过 proposalContent 检查
+  if (stageId === 'initialization') {
+    const initStage = store.stages.find(s => s.id === 'initialization')
+    // 检查是否有初始化产物（proposalContent 中包含 steps 信息或已完成项目生成）
+    if (!initStage?.proposalContent && !initStage?.steps?.length) {
+      ElMessage.warning('请先生成项目脚手架')
+      return
+    }
+    // initialization 阶段不需要 Human Gate，直接完成
+    store.updateStageStatus(stageId, 'completed', { steps: workflowStore.steps, updateStepStatus: workflowStore.updateStepStatus })
+    store.nextStage()
+    store.saveFullSnapshot(workflowStore.steps)
+    ElMessage.success('初始化阶段已完成')
+    return
+  }
+
+  // 其他阶段：必须先有 proposalContent
+  if (!stage.proposalContent) {
+    ElMessage.warning('请先生成文档内容')
+    return
+  }
+
+  pendingCompleteStageId.value = stageId
+  showHumanGateDialog.value = true
+}
+
+function confirmHumanGate() {
+  if (!pendingCompleteStageId.value) return
+
+  const stageId = pendingCompleteStageId.value
   store.updateStageStatus(stageId, 'completed', { steps: workflowStore.steps, updateStepStatus: workflowStore.updateStepStatus })
   store.nextStage()
   store.saveFullSnapshot(workflowStore.steps)
+
+  showHumanGateDialog.value = false
+  pendingCompleteStageId.value = null
+
+  ElMessage.success('阶段已完成')
+}
+
+function cancelHumanGate() {
+  showHumanGateDialog.value = false
+  pendingCompleteStageId.value = null
+}
+
+function getStageDocumentSummary(stageId: string | null | undefined): string {
+  if (!stageId) return ''
+  const stage = store.stages.find(s => s.id === stageId)
+  if (!stage?.proposalContent) return ''
+  const content = stage.proposalContent
+  if (content.fullText) {
+    const lines = content.fullText.split('\n').filter((l: string) => l.trim())
+    const title = lines.find((l: string) => l.startsWith('# '))
+    return title || content.name || '文档已生成'
+  }
+  return content.name || '文档已生成'
 }
 
 function failStage(stageId: string) {
@@ -653,13 +788,23 @@ async function startAIGeneration() {
   abortController.value = new AbortController()
 
   try {
-    const connected = await testOllamaConnection()
-    if (!connected) {
-      ElMessage.error('无法连接到 Ollama 服务，请确保 Ollama 已启动')
-      isGenerating.value = false
-      store.setStageGenerating(stageId, false)
-      abortController.value = null
-      return
+    // 根据当前模式检查连接
+    const currentModel = getCurrentModel()
+    const isExternalMode = currentModel?.provider === 'openai'
+
+    if (!isExternalMode) {
+      const connected = await testOllamaConnection()
+      if (!connected) {
+        ElMessage.error({
+          message: '无法连接到 ollama-server，请确保已启动：<br/>cd v2/services/ollama-server && pnpm dev',
+          duration: 6000,
+          dangerouslyUseHTMLString: true
+        })
+        isGenerating.value = false
+        store.setStageGenerating(stageId, false)
+        abortController.value = null
+        return
+      }
     }
 
     const files: { name: string; content: string }[] = []
@@ -710,14 +855,14 @@ async function startAIGeneration() {
     }
 
     // 根据阶段类型生成内容（会自动选择对应的 Prompt 模板）
-    const currentModel = getCurrentModel()
+    const modelForGeneration = currentModel || 'deepseek-r1'
 
     if (useSimpleEditor.value) {
       // 流式模式：实时追加内容到编辑器
-      const { duration } = await generateContentByStageStream(
+      await generateContentByStageStream(
         stageId,
         processed.files,
-        currentModel || 'deepseek-r1',
+        modelForGeneration,
         (chunk) => {
           simpleEditorRef.value?.appendContent(chunk)
         },
@@ -726,7 +871,7 @@ async function startAIGeneration() {
       editorMarkdownContent.value = simpleEditorRef.value?.getContent() || ''
     } else {
       // 非流式模式（结构化编辑器）
-      const aiResult = await generateContentByStage(stageId, processed.files, currentModel || 'deepseek-r1', abortController.value.signal)
+      const aiResult = await generateContentByStage(stageId, processed.files, modelForGeneration, abortController.value.signal)
       // 结构化编辑器模式：解析为 ProposalContent
       let structuredData: Record<string, unknown> | undefined
       if (aiResult.jsonText) {
@@ -802,7 +947,21 @@ async function startAIGeneration() {
       ElMessage.info('已取消生成')
     } else {
       console.error('AI generation error:', error)
-      ElMessage.error('AI 分析失败，请检查 Ollama 服务和文件内容')
+      // 根据当前模式给出更精确的错误提示
+      const currentModel = getCurrentModel()
+      const isExternalMode = currentModel?.provider === 'openai'
+      if (isExternalMode) {
+        ElMessage.error({
+          message: '外网模式 AI 生成失败，请检查 API 配置和网络连接',
+          duration: 5000
+        })
+      } else {
+        ElMessage.error({
+          message: '本地模式 AI 生成失败，请确保已启动 ollama-server：<br/>cd v2/services/ollama-server && pnpm dev',
+          duration: 6000,
+          dangerouslyUseHTMLString: true
+        })
+      }
     }
   } finally {
     console.log('[DEBUG] finally: setting isGenerating=false, stageId=', stageId)
@@ -1238,8 +1397,9 @@ function viewDocument(stage: any) {
     }
 
     editorStageName.value = stage.id
+    editorStageStatus.value = stage.status
     editorTitle.value = content.name || ''
-    editorReadOnly.value = true
+    editorReadOnly.value = stage.status === 'completed'
     editorLoadingText.value = '加载文档...'
     showDocumentEditor.value = true
   } catch (e) {
@@ -1323,6 +1483,7 @@ function hasProposalContent(stageId: string): boolean {
 }
 
 let architectureAbortController: AbortController | null = null
+let pendingArchitectureFiles: { name: string; content: string }[] = []
 
 interface ArchitectureDrivers {
   projectName: string
@@ -1461,38 +1622,27 @@ async function startArchitectureGeneration(stageId: string) {
     return
   }
 
-  const connected = await testOllamaConnection()
-  if (!connected) {
-    ElMessage.error('无法连接到 Ollama 服务，请确保 Ollama 已启动')
-    return
+  const initStage = store.stages.find(s => s.id === 'init')
+  const initContent = initStage?.proposalContent?.fullText || ''
+  const requirementContent = requirementStage.proposalContent?.fullText || ''
+
+  const combinedInput = `# 立项书\n\n${initContent}\n\n---\n\n# 需求文档\n\n${requirementContent}`
+
+  const drivers = extractArchitectureDrivers(requirementStage.proposalContent)
+  const driversContext = formatArchitectureContext(drivers)
+
+  let projectOverview = ''
+  if (initStage?.proposalContent) {
+    if (initStage.proposalContent.background) {
+      projectOverview = initStage.proposalContent.background.replace(/^##?.*?\n/, '').trim()
+    } else if (initStage.proposalContent.basicInfo) {
+      projectOverview = typeof initStage.proposalContent.basicInfo === 'string'
+        ? initStage.proposalContent.basicInfo
+        : initStage.proposalContent.basicInfo.name || ''
+    }
   }
 
-  isGenerating.value = true
-  store.setStageGenerating(stageId, true)
-  architectureAbortController = new AbortController()
-
-  try {
-    const requirementContent = requirementStage.proposalContent
-    const fullText = requirementContent.fullText || ''
-
-    const drivers = extractArchitectureDrivers(requirementContent)
-    const driversContext = formatArchitectureContext(drivers)
-
-    const initStage = store.stages.find(s => s.id === 'init')
-    const initContent = initStage?.proposalContent
-
-    let projectOverview = ''
-    if (initContent) {
-      if (initContent.background) {
-        projectOverview = initContent.background.replace(/^##?.*?\n/, '').trim()
-      } else if (initContent.basicInfo) {
-        projectOverview = typeof initContent.basicInfo === 'string'
-          ? initContent.basicInfo
-          : initContent.basicInfo.name || ''
-      }
-    }
-
-    const architecturePrompt = `
+  const architecturePrompt = `
 # 项目背景
 ${projectOverview || '（从立项书提取）'}
 
@@ -1506,37 +1656,21 @@ ${driversContext}
 3. 每个架构决策必须有对应的需求依据
 4. 必须包含 ADR（架构决策记录）记录关键选型理由`
 
-    const files = [
-      { name: '需求文档.md', content: fullText || JSON.stringify(requirementContent, null, 2) },
-      { name: '架构驱动因素.md', content: architecturePrompt }
-    ]
+  pendingArchitectureFiles = [
+    { name: '需求文档.md', content: requirementContent || JSON.stringify(requirementStage.proposalContent, null, 2) },
+    { name: '架构驱动因素.md', content: architecturePrompt }
+  ]
 
-    const processed = processFiles(files, 'architecture')
-    const currentModel = getCurrentModel()
-    const aiResult = await generateContentByStage('architecture', processed.files, currentModel || 'deepseek-r1', architectureAbortController.signal)
+  editorMarkdownContent.value = combinedInput
+  editorStageName.value = stageId
+  editorStageStatus.value = store.stages.find(s => s.id === stageId)?.status || ''
+  editorTitle.value = '架构文档编辑器'
+  editorReadOnly.value = false
+  editorLoadingText.value = '请编辑输入内容，点击"开始生成"启动 AI'
+  showDocumentEditor.value = true
 
-    const architectureDoc = parseAIResponse(aiResult.rawText, 'architecture')
-    store.saveProposalContent(stageId, architectureDoc)
-
-    editorDocument.value = architectureDoc
-    editorStageName.value = stageId
-    editorTitle.value = '架构文档编辑器'
-    editorReadOnly.value = false
-    showDocumentEditor.value = true
-
-    ElMessage.success('架构文档已生成')
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      console.log('Architecture generation cancelled')
-      return
-    }
-    console.error('Architecture generation error:', error)
-    ElMessage.error('架构文档生成失败，请检查 Ollama 服务')
-  } finally {
-    isGenerating.value = false
-    store.setStageGenerating(stageId, false)
-    architectureAbortController = null
-  }
+  currentProposalStage.value = store.stages.find(s => s.id === stageId)
+  currentUploadStageId.value = stageId
 }
 
 async function regenerateArchitecture(stageId: string) {
@@ -1555,6 +1689,130 @@ function cancelArchitectureGeneration() {
     architectureAbortController = null
   }
   isGenerating.value = false
+}
+
+async function startProjectInitialization(stageId: string) {
+  const architectureStage = store.stages.find(s => s.id === 'architecture')
+  if (!architectureStage?.proposalContent) {
+    ElMessage.warning('未找到架构文档，请先完成架构阶段')
+    return
+  }
+
+  const result = await store.executeInitialization()
+
+  if (result.success) {
+    // Get projectName from init stage (where it was properly extracted from proposal)
+    const initStage = store.stages.find(s => s.id === 'init')
+    const projectName = initStage?.proposalContent?.name
+      || (architectureStage.proposalContent as { name?: string; overview?: string })?.name
+      || (architectureStage.proposalContent as { name?: string; overview?: string })?.overview
+      || 'project'
+    const fileList = result.files.map(f => `- ${f.path}`).join('\n')
+    const summary = `# ${projectName} 项目初始化完成
+
+## 生成的文件
+
+${fileList}
+
+## 技术栈
+
+${((architectureStage.proposalContent as { techStack?: string[] })?.techStack || []).map(t => `- ${t}`).join('\n') || '（从架构文档提取）'}
+
+## 下一步
+
+1. ZIP 包已保存到: \`${projectName.toLowerCase().replace(/\s+/g, '-')}.zip\`
+2. 解压到目标目录（如已有 .cursor 目录需合并）
+3. 执行 \`pnpm install\` 安装依赖
+4. 执行 \`pnpm dev\` 启动开发服务器
+`
+
+    const saveResult = await saveProjectToServer(result.files)
+    if (saveResult.success) {
+      ElMessage.success(`项目已保存到: ${saveResult.extractPath}`)
+    } else {
+      ElMessage.warning(`ZIP 已下载，但服务器保存失败: ${saveResult.error}`)
+    }
+
+    editorMarkdownContent.value = summary
+    editorStageName.value = stageId
+    editorStageStatus.value = store.stages.find(s => s.id === stageId)?.status || ''
+    editorTitle.value = `${projectName} - 项目初始化`
+    editorReadOnly.value = true
+    editorLoadingText.value = ''
+    showDocumentEditor.value = true
+
+    currentProposalStage.value = store.stages.find(s => s.id === stageId)
+    currentUploadStageId.value = stageId
+
+    ElMessage.success('项目脚手架生成完成')
+  } else {
+    ElMessage.error('项目脚手架生成失败')
+  }
+}
+
+async function handleArchitectureStartGenerate() {
+  if (pendingArchitectureFiles.length === 0) {
+    ElMessage.warning('请先通过"生成架构文档"按钮打开编辑器')
+    return
+  }
+
+  const stageId = currentUploadStageId.value || 'architecture'
+
+  isGenerating.value = true
+  store.setStageGenerating(stageId, true)
+  architectureAbortController = new AbortController()
+
+  // 获取当前模型配置
+  const modelForArch = getCurrentModel()
+
+  try {
+    const processed = processFiles(pendingArchitectureFiles, 'architecture')
+
+    simpleEditorRef.value?.clearContent()
+
+    await generateContentByStageStream(
+      'architecture',
+      processed.files,
+      modelForArch || 'deepseek-r1',
+      (chunk) => {
+        simpleEditorRef.value?.appendContent(chunk)
+      },
+      architectureAbortController.signal
+    )
+
+    const finalContent = simpleEditorRef.value?.getContent() || ''
+    editorMarkdownContent.value = finalContent
+
+    ElMessage.success('架构文档已生成，请在编辑器中确认内容并手动保存')
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.log('Architecture generation cancelled')
+      ElMessage.info('已取消生成')
+      return
+    }
+    console.error('Architecture generation error:', error)
+
+    // 根据当前模式给出更精确的错误提示
+    const isExternalMode = modelForArch?.provider === 'openai'
+
+    if (isExternalMode) {
+      ElMessage.error({
+        message: '外网模式生成失败，请检查 API 配置和网络连接',
+        duration: 5000
+      })
+    } else {
+      ElMessage.error({
+        message: '本地模式生成失败，请确保已启动 ollama-server 服务：<br/>cd v2/services/ollama-server && pnpm dev',
+        duration: 6000,
+        dangerouslyUseHTMLString: true
+      })
+    }
+  } finally {
+    isGenerating.value = false
+    store.setStageGenerating(stageId, false)
+    architectureAbortController = null
+    pendingArchitectureFiles = []
+  }
 }
 
 // 取消分析的 AbortController
@@ -1592,11 +1850,25 @@ async function doAIAnalysis() {
   // 创建 AbortController 用于取消请求
   analysisAbortController = new AbortController()
 
+  // 根据当前模式检查连接
+  const selectedModel = getCurrentModel()
+  const isExternalMode = selectedModel?.provider === 'openai'
+
   try {
-    const connected = await testOllamaConnection()
-    if (!connected) {
-      ElMessage.error('无法连接到 Ollama 服务，请确保 Ollama 已启动')
-      return
+    if (isExternalMode) {
+      // 外网模式不需要检查 ollama-server
+      console.log('[AI Analysis] Using external mode')
+    } else {
+      // 本地模式需要检查 ollama-server
+      const connected = await testOllamaConnection()
+      if (!connected) {
+        ElMessage.error({
+          message: '无法连接到 ollama-server，请确保已启动：<br/>cd v2/services/ollama-server && pnpm dev',
+          duration: 6000,
+          dangerouslyUseHTMLString: true
+        })
+        return
+      }
     }
 
     const template = getDefaultTemplate()
@@ -1622,7 +1894,6 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
     ]
 
     const processed = processFiles(files, 'requirement')
-    const currentModel = getCurrentModel()
     let fullText = ''
     analysisIsStreaming.value = true
 
@@ -1638,7 +1909,7 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
     await generateContentByStageStream(
       'requirement_analysis',
       processed.files,
-      currentModel || 'deepseek-r1',
+      selectedModel || 'deepseek-r1',
       (chunk) => {
         fullText += chunk
         // 流式更新 analysisResult，让 UI 实时显示内容
@@ -1671,7 +1942,22 @@ ${template.commonRisks.map(item => `- ${item}`).join('\n')}
       return
     }
     console.error('AI analysis error:', error)
-    ElMessage.error('AI 分析失败，请检查 Ollama 服务')
+
+    // 根据当前模式给出更精确的错误提示
+    const isExternalMode = selectedModel?.provider === 'openai'
+
+    if (isExternalMode) {
+      ElMessage.error({
+        message: '外网模式 AI 分析失败，请检查 API 配置和网络连接',
+        duration: 5000
+      })
+    } else {
+      ElMessage.error({
+        message: '本地模式 AI 分析失败，请确保已启动 ollama-server：<br/>cd v2/services/ollama-server && pnpm dev',
+        duration: 6000,
+        dangerouslyUseHTMLString: true
+      })
+    }
   } finally {
     analysisAbortController = null
     analysisIsStreaming.value = false
@@ -2127,5 +2413,69 @@ function handleAnalysisConfirm(result: GapAnalysisResult) {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.human-gate-content {
+  padding: 8px 0;
+}
+
+.hg-alert {
+  margin-bottom: 20px;
+}
+
+.hg-stage-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.hg-stage-desc {
+  color: #606266;
+  font-size: 0.875rem;
+}
+
+.hg-document-summary {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.summary-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #303133;
+}
+
+.summary-content {
+  color: #606266;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.summary-empty {
+  color: #909399;
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+.hg-approvals {
+  display: flex;
+  gap: 20px;
+}
+
+.approval-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  flex: 1;
 }
 </style>

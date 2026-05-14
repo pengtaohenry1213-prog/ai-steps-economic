@@ -9,10 +9,20 @@ export type PromptType =
   | 'requirement'           // 需求补充文档
   | 'requirement_analysis'  // 需求差距分析
   | 'architecture'          // 架构设计
+  | 'initialization'        // 项目初始化
   | 'prd'                   // 产品需求文档
   | 'test_plan'             // 测试计划
   | 'acceptance'            // 验收报告
   | 'deployment'            // 部署方案
+
+export interface RelatedSpec {
+  /** 规范文档标题 */
+  title: string
+  /** 规范文档路径 */
+  path: string
+  /** 规范类型 */
+  category: 'frontend' | 'backend' | 'database' | 'security' | 'testing' | 'git' | 'prompt' | 'process'
+}
 
 export interface PromptConfig {
   /** Prompt 类型标识 */
@@ -38,6 +48,8 @@ export interface PromptConfig {
   constraints: string[]
   /** 质量检查项 */
   qualityChecks: string[]
+  /** 关联的工程化规范文档 */
+  relatedSpecs?: RelatedSpec[]
 }
 
 export const AI_PROMPTS: Record<PromptType, PromptConfig> = {
@@ -174,7 +186,7 @@ export const AI_PROMPTS: Record<PromptType, PromptConfig> = {
       title: '系统架构师',
       expertise: ['系统设计', '技术选型', '性能优化', '安全设计', 'DDD', '微服务架构']
     },
-    task: '基于需求文档，设计满足非功能需求（NFR）的系统架构方案。架构必须由需求驱动：性能要求决定缓存策略，安全要求决定认证方案，规模要求决定部署模式。',
+    task: '基于需求文档，设计满足非功能需求（NFR）的系统架构方案，并生成开发任务步骤文档。架构必须由需求驱动：性能要求决定缓存策略，安全要求决定认证方案，规模要求决定部署模式。',
     inputDescription: `【自动加载】需求文档 proposalContent，包含：
 - 项目概述（overview）
 - 功能范围 P0/P1/P2（scope.inScope）
@@ -188,15 +200,16 @@ export const AI_PROMPTS: Record<PromptType, PromptConfig> = {
 3. 功能驱动因素：核心业务逻辑、集成点、第三方依赖`,
     outputFormat: {
       jsonSchema: {
-        overview: '',           // 系统目标和范围概述
-        architectureType: '',   // 架构类型选择理由
-        components: [],         // 核心组件列表
-        dataModel: {},          // 数据模型设计
-        apiDesign: [],          // API 设计要点
-        securityDesign: {},     // 安全架构设计
-        deploymentArchitecture: '', // 部署架构
-        techStack: [],          // 技术选型及理由
-        nonFunctionalRequirements: {} // 映射到 NFR 的架构决策
+        overview: '',
+        architectureType: '',
+        components: [],
+        dataModel: {},
+        apiDesign: [],
+        securityDesign: {},
+        deploymentArchitecture: '',
+        techStack: [],
+        nonFunctionalRequirements: {},
+        steps: [{ id: 'step1', title: '', target: '', constraints: [], acceptance: [], files: [], dependsOn: '' }]
       },
       markdownTemplate: `# 系统架构设计文档
 
@@ -240,21 +253,63 @@ export const AI_PROMPTS: Record<PromptType, PromptConfig> = {
 ### 8.2 后端技术
 ### 8.3 基础设施
 
-## 9. ADR（架构决策记录）`
+## 9. ADR（架构决策记录）
+
+## 10. 开发任务步骤（Step 文档）
+
+### Step 1: {组件名称}
+...
+
+### Step 2: {组件名称}
+...`,
+      stepsTemplate: `# Step {N}: {任务名称}
+
+## 任务目标
+{具体功能描述}
+
+## 约束条件
+- 遵循前端工程化 SOP
+- 遵循后端工程化 SOP
+- 遵循数据库设计规范
+- 遵循安全工程规范
+
+## 验收标准
+- [ ] 功能可正常运行
+- [ ] 单元测试覆盖率 > 70%
+- [ ] 无安全漏洞
+
+## 涉及文件
+- src/views/{Component}.vue
+- src/api/{api}.ts
+
+## 前置依赖
+- step{N-1}.md (如有)`
     },
     constraints: [
       '架构必须由需求驱动：每个架构决策必须有对应的需求依据',
       '性能要求必须映射到具体的架构策略（如：响应时间<100ms → 缓存策略）',
       '安全要求必须映射到具体的安全措施（如：等保二级 → 审计日志）',
       '技术选型必须有明确的优缺点对比',
-      '必须包含架构决策记录（ADR），记录关键选型理由'
+      '必须包含架构决策记录（ADR），记录关键选型理由',
+      '严格遵循 docs/AI工程化开发手册/ 中的前端/后端/数据库/安全规范',
+      '必须根据 components 数组生成对应的 step 文档，粒度：一个组件 = 一个 step',
+      'step 文档必须包含：任务目标、约束条件、验收标准、涉及文件、前置依赖'
     ],
     qualityChecks: [
       '每个架构决策是否都有对应的需求依据？',
       '性能要求是否都有具体的实现策略？',
       '安全要求是否都有对应的安全措施？',
       '技术选型是否有明确的优缺点分析？',
-      '是否包含 ADR 记录关键决策？'
+      '是否包含 ADR 记录关键决策？',
+      'components 是否都有对应的 step 文档？',
+      'step 之间的依赖关系是否正确？',
+      'step 验收标准是否可测试？'
+    ],
+    relatedSpecs: [
+      { title: '前端工程化 SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
+      { title: '后端工程化 SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
+      { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
+      { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' }
     ]
   },
 
@@ -413,6 +468,100 @@ export const AI_PROMPTS: Record<PromptType, PromptConfig> = {
       '部署步骤是否完整可执行？',
       '回滚方案是否可行？',
       '监控告警是否覆盖关键指标？'
+    ],
+    relatedSpecs: [
+      { title: 'Vercel 部署规范', path: 'docs/AI工程化开发手册/Vercel 部署规范（AI 工程化开发版）.md', category: 'process' },
+      { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' }
+    ]
+  },
+
+  initialization: {
+    type: 'initialization',
+    name: '项目初始化',
+    role: {
+      title: 'Tech Lead + 全栈工程师',
+      certifications: '基于 .cursor/rules/ 技术规范 + docs/AI工程化开发手册/',
+      expertise: [
+        'Vue3 + TypeScript + Vite',
+        'Monorepo 架构 (Turborepo + pnpm)',
+        'vxe-table 企业级表格',
+        'HyperFormula 公式引擎',
+        'Pinia 状态管理',
+        'TailwindCSS 样式方案',
+        'Cursor Rules 配置',
+        'Vitest 单元测试'
+      ]
+    },
+    task: '基于架构文档和 Cursor Rules，生成项目脚手架代码（配置 + 目录结构 + 基础源码），为 Cursor 开发阶段做准备。生成的代码保存到 v2/dev/{projectName}/ 目录。',
+    inputDescription: `【自动加载】
+- 架构文档 proposalContent（包含 techStack, components, architectureType, steps）
+- .cursor/rules/tech-lead.mdc（技术决策规范）
+- .cursor/rules/frontend-vue3.mdc（前端规范）
+- .cursor/rules/backend.mdc（后端规范）
+- .cursor/rules/database.mdc（数据库规范）
+- .cursor/rules/security-rules.md（安全规范）
+
+【规范文档】
+- docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md
+- docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md
+- docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md
+- docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md
+
+【技术选型映射】
+- 在线表格编辑 → vxe-table
+- 公式计算 → HyperFormula
+- 状态管理 → Pinia
+- 构建工具 → Vite
+- Monorepo → Turborepo + pnpm
+
+【输出路径】
+- 项目代码：v2/dev/{projectName}/src/
+- Cursor Rules：v2/dev/{projectName}/.cursor/rules/
+- Step 文档：v2/dev/{projectName}/docs/steps/`,
+    outputFormat: {
+      jsonSchema: {
+        projectName: '项目名称',
+        techStack: '技术栈数组',
+        components: '组件数组',
+        dependencies: { production: '生产依赖[]', development: '开发依赖[]' },
+        files: [{ path: '文件路径', content: '文件内容' }]
+      },
+      markdownTemplate: `# 项目初始化
+
+## 1. 技术选型
+## 2. 项目结构
+## 3. 依赖配置
+## 4. Cursor Rules`
+    },
+    constraints: [
+      '项目输出到 v2/dev/{projectName}/ 目录',
+      '基于架构文档的 techStack 生成 package.json 依赖',
+      '组件目录根据架构文档的 components 数组生成',
+      '必须包含 vxe-table + HyperFormula 配置（如技术栈包含）',
+      '必须包含 TailwindCSS + PostCSS 配置',
+      '必须包含 ESLint + Prettier 配置',
+      '必须包含 Vitest 测试配置',
+      'Cursor Rules 从 .cursor/rules/ 复制相关文件到项目 v2/dev/{projectName}/.cursor/rules/',
+      '生成的代码必须是可直接运行的脚手架',
+      'Step 文档（step1.md, step2.md...）从 architecture 阶段的 steps 数组读取，保存到 v2/dev/{projectName}/docs/steps/',
+      '严格遵循 docs/AI工程化开发手册/ 中的规范'
+    ],
+    qualityChecks: [
+      'package.json 依赖是否完整？',
+      'vite.config.ts 是否正确配置？',
+      'src/main.ts 入口文件是否完整？',
+      '是否包含 ESLint + Prettier 配置？',
+      'Cursor Rules 是否复制到 v2/dev/{projectName}/.cursor/rules/？',
+      '是否遵循前端/后端工程化 SOP 规范？',
+      'Step 文档是否生成到 v2/dev/{projectName}/docs/steps/？'
+    ],
+    relatedSpecs: [
+      { title: '前端工程化 SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
+      { title: '后端工程化 SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
+      { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
+      { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' },
+      { title: 'AI工程化接入指南', path: 'docs/AI工程化开发手册/AI工程化接入指南.md', category: 'process' },
+      { title: 'Cursor 使用指南', path: 'docs/AI工程化开发手册/Cursor 使用指南.md', category: 'cursor' }
     ]
   }
 }

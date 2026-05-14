@@ -1,5 +1,5 @@
 <template>
-  <el-config-provider>
+  <el-config-provider :z-index="3000">
     <div class="dashboard">
       <el-container>
         <el-header class="header">
@@ -13,10 +13,10 @@
                 <el-icon class="el-icon--left"><List /></el-icon>
                 全生命周期
               </el-radio-button>
-              <!-- <el-radio-button value="workflow">
+              <el-radio-button value="workflow">
                 <el-icon class="el-icon--left"><Document /></el-icon>
                 Step 工作台
-              </el-radio-button> -->
+              </el-radio-button>
             </el-radio-group>
             <el-tag type="success" effect="dark">
               <el-icon class="el-icon--left"><CircleCheck /></el-icon>

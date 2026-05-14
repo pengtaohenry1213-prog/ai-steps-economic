@@ -272,6 +272,74 @@ export const LIFECYCLE_STAGES = [
   { id: 'iteration', name: '迭代', label: 'Iteration' }
 ] as const
 
+export interface StageSpec {
+  /** 规范文档标题 */
+  title: string
+  /** 规范文档路径 */
+  path: string
+  /** 规范类型 */
+  category: 'frontend' | 'backend' | 'database' | 'security' | 'testing' | 'git' | 'prompt' | 'process' | 'cursor'
+  /** 说明 */
+  description?: string
+}
+
+export const STAGE_SPECS: Record<string, StageSpec[]> = {
+  init: [
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '市场分析、竞品分析Prompt' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '团队角色定义' }
+  ],
+  requirement: [
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: 'PRD生成、需求分析Prompt' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: 'Prompt分层规范' }
+  ],
+  architecture: [
+    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
+    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
+    { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
+    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' }
+  ],
+  initialization: [
+    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
+    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
+    { title: 'Cursor使用规范', path: 'docs/AI工程化开发手册/Cursor 使用规范（AI 工程化开发版）.md', category: 'cursor' },
+    { title: 'Claude Code工作流', path: 'docs/AI工程化开发手册/Claude Code 工作流（工程化 AI 开发版）.md', category: 'cursor' }
+  ],
+  development: [
+    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
+    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
+    { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
+    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' },
+    { title: 'AI生成代码审查清单', path: 'docs/AI工程化开发手册/AI生成代码审查清单（AI 工程化开发版）.md', category: 'process' },
+    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing' },
+    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git' }
+  ],
+  testing: [
+    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing' },
+    { title: 'AI安全审查清单', path: 'docs/AI工程化开发手册/AI安全审查清单.md', category: 'security' },
+    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend', description: '测试部分' }
+  ],
+  acceptance: [
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '文档生成Prompt' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '文档自动生成' }
+  ],
+  packaging: [
+    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security', description: '依赖漏洞扫描' },
+    { title: 'Vercel部署规范', path: 'docs/AI工程化开发手册/Vercel 部署规范（AI 工程化开发版）.md', category: 'process' }
+  ],
+  deployment: [
+    { title: 'Vercel部署规范', path: 'docs/AI工程化开发手册/Vercel 部署规范（AI 工程化开发版）.md', category: 'process' },
+    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git', description: '环境分支管理' }
+  ],
+  operation: [
+    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing', description: '日志分析、根因定位' },
+    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security', description: '安全监控' }
+  ],
+  iteration: [
+    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git' },
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '需求分析Prompt' }
+  ]
+}
+
 export interface WorkflowState {
   steps: Step[]
   currentStepId: string | null

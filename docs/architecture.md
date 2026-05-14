@@ -1,3 +1,125 @@
+
+架构阶段完整方案
+
+  1. 开始按钮状态
+
+  - 前置条件：当 init 和 requirement 阶段都有 proposalContent 时，架构阶段"开始"按钮可用
+  - 按钮文案：可显示"基于前序阶段开始"或保持"开始"
+
+  2. 点击"开始"后的流程
+
+  用户点击"开始"
+      ↓
+		- startStage('architecture')
+    - 设置 status='in_progress'
+		  ↓
+	出现"生成架构文档"按钮，点击后【startArchitectureGeneration(), 只使用 requirement 内容】
+	    ↓
+  弹出 DocumentEditorSimple 编辑器
+      ↓
+  自动加载输入内容（可编辑）：
+    - 立项书 (init.fullText)
+    - 需求文档 (requirement.fullText)
+      ↓
+  用户可选择：
+    a) 直接点击"开始生成"（使用默认内容）
+    b) 先编辑修改输入内容，再点击"开始生成"
+      ↓
+  调用 generateContentByStageStream('architecture', files, ...)
+      ↓
+  流式输出：
+    - 思考内容（黑色背景区域）
+    - 架构文档正文（实时显示）
+      ↓
+  生成完成，用户可编辑确认
+      ↓
+  点击"保存" → 保存到 Supabase/localStorage
+  点击"完成" → 进入 Human Gate 审批
+
+  3. 关键技术点
+
+  | 点 | 说明 |
+  | --- | --- |
+  | 输入内容可编辑 | 立项书+需求文档合并后，用户可修改补充 |
+  | 流式输出 | 复用 DocumentEditorSimple 组件的流式能力 |
+  | 思考内容分离       | `` 显示在黑色背景框中，最新3行 |
+  | 保存到 Supabase | 复用现有 store.saveProposalContent('architecture', doc) |
+
+---
+
+  4. 与 requirement_analysis 的对比
+
+  | 对比项 | 需求分析 (requirement_analysis) | 架构阶段 (architecture) |
+  | --- | --- | --- |
+  | 输入数据   | init 立项书 + 行业标准 | init 立项书 + requirement
+   需求文档 |
+  | 用户输入   | 无额外输入 | 可编辑输入内容后再生成 |
+  | 输出格式   | hasCovered/missingSuggestions/bestPractices | 完整架构文档 |
+  | prompt | requirement_analysis | architecture |
+
+  ---
+
+                                                                                                 │
+│ ╭──────────────────────────────────────────────────────────────────────────────────────────────╮ │
+│ │ 架构阶段实现计划                                                                             │ │
+│ │                                                                                              │ │
+│ │ 基于 startAIGeneration 流式生成模式 (lines 700-813)，修改 startArchitectureGeneration (lines │ │
+│ │  1457-1540)：                                                                                │ │
+│ │                                                                                              │ │
+│ │ 修改内容                                                                                     │ │
+│ │                                                                                              │ │
+│ │ 1. 重构 startArchitectureGeneration 函数                                                     │ │
+│ │                                                                                              │ │
+│ │ 将现在的"生成后打开编辑器"模式改为"先打开编辑器，用户编辑后点击开始生成"：                   │ │
+│ │                                                                                              │ │
+│ │ // 1. 合并 init + requirement 内容到编辑器                                                   │ │
+│ │ const initContent = initStage?.proposalContent?.fullText || ''                               │ │
+│ │ const requirementContent = requirementStage.proposalContent?.fullText || ''                  │ │
+│ │ const combinedInput = `# 立项书\n\n${initContent}\n\n---\n\n#                                │ │
+│ │ 需求文档\n\n${requirementContent}`                                                           │ │
+│ │                                                                                              │ │
+│ │ // 2. 打开编辑器（显示合并后的输入内容供用户编辑）                                           │ │
+│ │ editorMarkdownContent.value = combinedInput                                                  │ │
+│ │ editorStageName.value = stageId                                                              │ │
+│ │ editorTitle.value = '架构文档编辑器'                                                         │ │
+│ │ editorReadOnly.value = false                                                                 │ │
+│ │ editorLoadingText.value = '请编辑输入内容，点击"开始生成"启动 AI'                            │ │
+│ │ showDocumentEditor.value = true                                                              │ │
+│ │ simpleEditorRef.value?.clearContent()                                                        │ │
+│ │ simpleEditorRef.value?.setContent(combinedInput)                                             │ │
+│ │                                                                                              │ │
+│ │ // 3. 状态设为"等待用户点击开始生成"（而非直接生成）                                         │ │
+│ │                                                                                              │ │
+│ │ 2. 添加 startArchitectureGenerationStreaming 内部函数                                        │ │
+│ │                                                                                              │ │
+│ │ 用户点击"开始生成"后：                                                                       │ │
+│ │ - 调用 simpleEditorRef.value?.clearContent() 清空编辑器                                      │ │
+│ │ - 使用 generateContentByStageStream('architecture', processed.files, ...) 流式生成           │ │
+│ │ - 通过回调 simpleEditorRef.value?.appendContent(chunk) 实时追加内容                          │ │
+│ │ - 生成完成后保存到 store.saveProposalContent                                                 │ │
+│ │                                                                                              │ │
+│ │ 3. UI 调整                                                                                   │ │
+│ │                                                                                              │ │
+│ │ 在编辑器工具栏添加"开始生成"按钮（架构阶段特有），流程：                                     │ │
+│ │ 1. 点击"生成架构文档" → 打开编辑器显示输入内容                                               │ │
+│ │ 2. 用户编辑输入内容（可选）                                                                  │ │
+│ │ 3. 点击"开始生成" → 流式生成架构文档                                                         │ │
+│ │ 4. 生成完成 → 用户可编辑 → 保存                                                              │ │
+│ │                                                                                              │ │
+│ │ 关键区别                                                                                     │ │
+│ │                                                                                              │ │
+│ │ | 项目   | 当前实现                         | 新实现                               |         │ │
+│ │ |------|------------------------------|-----------------------------------|                  │ │
+│ │ | 时机   | 生成完成后打开编辑器                   | 先打开编辑器，用户编辑后再生成           │ │
+│ │          |                                                                                   │ │
+│ │ | 内容   | 仅 requirement 内容             | init + requirement 合并             |           │ │
+│ │ | 模式   | 非流式 (generateContentByStage) | 流式 (generateContentByStageStream) |           │ │
+│ │ | 用户编辑 | 不可编辑输入                       | 可编辑输入内容后再生成                     │ │
+│ │    |                                                                                         │ │
+│ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯ │
+
+
+
 架构设计文档 标准章节 可在后期做功能拆分么？ 我一般拆分是以工作流方式拆，比如：stepN.md, 
   第一步做什么、测什么、校验什么和生成什么。
   先把核心结论给你，再帮你对齐你的工作流 Step 拆分模式，两套完全能兼容、不冲突。

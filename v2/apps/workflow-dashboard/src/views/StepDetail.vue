@@ -89,6 +89,12 @@
       </el-row>
 
       <el-row :gutter="20" class="detail-row">
+        <el-col :span="24">
+          <SpecReferences :specs="currentSpecs" />
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="20" class="detail-row">
         <el-col :xs="24" :lg="12">
           <el-card shadow="never" class="inner-card">
             <template #header>
@@ -211,7 +217,8 @@ import { useLifecycleStore } from '../stores/lifecycleStore'
 import TodoGraph from '../components/TodoGraph.vue'
 import AgentLog from '../components/AgentLog.vue'
 import HumanGatePanel from '../components/HumanGatePanel.vue'
-import { LIFECYCLE_STEP_TEMPLATES } from '../types'
+import SpecReferences from '../components/SpecReferences.vue'
+import { LIFECYCLE_STEP_TEMPLATES, STAGE_SPECS } from '../types'
 import type { Todo, GateDecision } from '../types'
 import {
   ArrowLeft, Check, Loading, Close, Minus,
@@ -247,6 +254,11 @@ const currentProposalContent = computed(() => {
   if (!currentStep.value?.lifecycleStageId) return null
   const stage = lifecycleStore.stages.find(s => s.id === currentStep.value.lifecycleStageId)
   return stage?.proposalContent ?? null
+})
+
+const currentSpecs = computed(() => {
+  if (!currentStep.value?.lifecycleStageId) return []
+  return STAGE_SPECS[currentStep.value.lifecycleStageId] || []
 })
 
 const agentLogs = computed(() =>

@@ -40,7 +40,16 @@
           <el-icon class="el-icon--left"><Download /></el-icon>
           导出
         </el-button>
-        <el-button v-if="!readOnly" type="primary" size="small" @click="handleSave">
+        <el-button
+          v-if="stageName === 'architecture' && stageStatus !== 'completed' && !isStreaming && !hasGenerated"
+          type="success"
+          size="small"
+          @click="emit('startGenerate')"
+        >
+          <el-icon class="el-icon--left"><Connection /></el-icon>
+          开始生成
+        </el-button>
+        <el-button v-if="!readOnly && !isStreaming && markdownContent" type="primary" size="small" @click="handleSave">
           保存
         </el-button>
       </div>
@@ -116,7 +125,8 @@ import {
   CopyDocument,
   Download,
   DocumentAdd,
-  Loading
+  Loading,
+  Connection
 } from '@element-plus/icons-vue'
 
 interface Props {
@@ -124,6 +134,7 @@ interface Props {
   content?: string
   stageName?: string
   stageTitle?: string
+  stageStatus?: string
   readOnly?: boolean
   isStreaming?: boolean
   defaultTemplate?: 'proposal' | 'requirement' | 'architecture' | 'test_plan' | 'acceptance' | 'deployment'
@@ -134,6 +145,7 @@ interface Emits {
   (e: 'update:content', content: string): void
   (e: 'save', content: string): void
   (e: 'closed'): void
+  (e: 'startGenerate'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -154,6 +166,7 @@ const showCursor = ref(false)
 const fullContent = ref('')
 const thinkingContent = ref('')
 const showJsonLoading = ref(false)
+const hasGenerated = ref(false)
 
 const TEMPLATES: Record<string, string> = {
   proposal: `## 项目名称
@@ -468,11 +481,13 @@ watch(() => props.isStreaming, (streaming) => {
       .replace(/^<think>/gi, '')
       .replace(/^<\/think>/gi, '')
     markdownContent.value = cleanContent.trim()
+    hasGenerated.value = true
   }
 })
 
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen && !markdownContent.value) {
+    hasGenerated.value = !!props.content
     nextTick(() => {
       if (textareaRef.value?.focus) {
         textareaRef.value.focus()

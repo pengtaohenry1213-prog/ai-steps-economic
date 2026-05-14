@@ -118,7 +118,7 @@ export async function generateText(request: GenerateRequest): Promise<string> {
 /**
  * 根据阶段 ID 和文件生成 AI 内容
  * 支持通过 signal 取消请求
- * 支持 Ollama 和 OpenAI 兼容 API
+ * 支持 Ollama（本地）和 OpenAI 兼容 API（外网）
  * 返回归一化的 StandardResponse 格式
  */
 export async function generateContentByStage(
@@ -132,7 +132,49 @@ export async function generateContentByStage(
     ? getModelById(model) || { id: model, name: model, provider: 'ollama' as const }
     : model
 
-  // First try the integrated endpoint
+  const startTime = Date.now()
+
+  // 外网模式（OpenAI 兼容 API）：前端直接调用
+  if (modelConfig.provider === 'openai' && modelConfig.baseUrl && modelConfig.apiKey) {
+    console.log(`[Frontend] Calling OpenAI-compatible API directly: ${modelConfig.baseUrl}`)
+    const promptType = getPromptTypeByStageId(stageId)
+    const prompt = buildPrompt({ type: promptType, files, stageId })
+
+    const response = await fetch(`${modelConfig.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${modelConfig.apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelConfig.id,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 8192
+      }),
+      signal
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`OpenAI API error ${response.status}: ${errorText}`)
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content || ''
+    const duration = Date.now() - startTime
+
+    console.log(`[Frontend] OpenAI response: ${content.length} chars in ${duration}ms`)
+
+    return {
+      jsonText: '',
+      markdownText: content,
+      model: modelConfig.id,
+      duration
+    }
+  }
+
+  // 本地模式（Ollama）：通过后端服务代理
   try {
     const requestBody: GenerateByStageRequest = {
       stageId,
@@ -191,7 +233,9 @@ export async function generateContentByStage(
 
 /**
  * 流式生成 AI 内容 - SSE 版本
- * 通过回调实时返回生成的文本片段
+ * 支持两种模式：
+ * 1. OpenAI 兼容 API（外网模式）：前端直接调用
+ * 2. Ollama（本地模式）：通过后端 ollama-server 代理
  */
 export async function generateContentByStageStream(
   stageId: string,
@@ -205,6 +249,14 @@ export async function generateContentByStageStream(
     ? getModelById(model) || { id: model, name: model, provider: 'ollama' as const }
     : model
 
+  const startTime = Date.now()
+
+  // 外网模式（OpenAI 兼容 API）：前端直接调用
+  if (modelConfig.provider === 'openai' && modelConfig.baseUrl && modelConfig.apiKey) {
+    return streamOpenAICompatible(modelConfig, files, stageId, onChunk, signal, startTime)
+  }
+
+  // 本地模式（Ollama）：通过后端服务代理
   const requestBody: GenerateByStageRequest = {
     stageId,
     files,
@@ -265,6 +317,86 @@ export async function generateContentByStageStream(
       }
     }
   }
+
+  return { duration }
+}
+
+/**
+ * 前端直接调用 OpenAI 兼容 API（流式）
+ */
+async function streamOpenAICompatible(
+  modelConfig: AIModel,
+  files: ProcessedFile[],
+  stageId: string,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+  startTime?: number
+): Promise<{ duration: number }> {
+  const promptType = getPromptTypeByStageId(stageId)
+  const prompt = buildPrompt({ type: promptType, files, stageId })
+
+  console.log(`[Frontend] Streaming via OpenAI-compatible API: ${modelConfig.baseUrl}`)
+  console.log(`[Frontend] Model: ${modelConfig.id}, Prompt length: ${prompt.length} chars`)
+
+  const response = await fetch(`${modelConfig.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${modelConfig.apiKey}`
+    },
+    body: JSON.stringify({
+      model: modelConfig.id,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 8192,
+      stream: true
+    }),
+    signal
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`OpenAI API error ${response.status}: ${errorText}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Response body is not readable')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullResponse = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6)
+        if (data === '[DONE]') break
+
+        try {
+          const parsed = JSON.parse(data)
+          const content = parsed.choices?.[0]?.delta?.content
+          if (content) {
+            fullResponse += content
+            onChunk(content)
+          }
+        } catch {
+          // Skip non-JSON lines
+        }
+      }
+    }
+  }
+
+  const duration = startTime ? Date.now() - startTime : 0
+  console.log(`[Frontend] OpenAI streaming complete: ${fullResponse.length} chars in ${duration}ms`)
 
   return { duration }
 }
