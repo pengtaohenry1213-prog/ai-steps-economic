@@ -1,0 +1,17 @@
+{
+  "name": "strategy-matching-app",
+  "version": "1.0.0",
+  "description": "开发策略智能匹配服务",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "example": "npx tsx example.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}
