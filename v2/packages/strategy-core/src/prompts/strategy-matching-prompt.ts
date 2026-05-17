@@ -281,26 +281,57 @@ interface EnhancedStrategy {
 }
 
 function extractJson(text: string): string {
-  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (jsonMatch) {
-    return jsonMatch[1].trim()
+  const trimmed = text.trim()
+
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i)
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    const inner = codeBlockMatch[1].trim()
+    if (inner.startsWith('{') && inner.endsWith('}')) {
+      try {
+        JSON.parse(inner)
+        return inner
+      } catch {
+      }
+    }
   }
 
-  const firstBrace = text.indexOf('{')
+  const firstBrace = trimmed.indexOf('{')
   if (firstBrace === -1) {
     throw new Error('无法从响应中提取 JSON：未找到开始括号')
   }
 
   let braceCount = 0
+  let inString = false
+  let escapeNext = false
   let endPos = -1
-  for (let i = firstBrace; i < text.length; i++) {
-    if (text[i] === '{') {
-      braceCount++
-    } else if (text[i] === '}') {
-      braceCount--
-      if (braceCount === 0) {
-        endPos = i + 1
-        break
+
+  for (let i = firstBrace; i < trimmed.length; i++) {
+    const char = trimmed[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === '\\') {
+      escapeNext = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        braceCount++
+      } else if (char === '}') {
+        braceCount--
+        if (braceCount === 0) {
+          endPos = i + 1
+          break
+        }
       }
     }
   }
@@ -309,9 +340,12 @@ function extractJson(text: string): string {
     throw new Error('无法从响应中提取 JSON：括号不匹配')
   }
 
-  const jsonStr = text.substring(firstBrace, endPos).trim()
-  if (!jsonStr.startsWith('{') || !jsonStr.endsWith('}')) {
-    throw new Error('无法从响应中提取 JSON')
+  const jsonStr = trimmed.substring(firstBrace, endPos)
+
+  try {
+    JSON.parse(jsonStr)
+  } catch (e) {
+    throw new Error(`JSON 解析失败：${e instanceof Error ? e.message : '未知错误'}`)
   }
 
   return jsonStr

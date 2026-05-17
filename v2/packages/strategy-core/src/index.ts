@@ -14,13 +14,15 @@ export {
   configureLLMClient,
   isLLMConfigured,
   matchStrategy,
+  matchStrategyWithAIService,
   getFullStrategyInfo,
   getFullIndustryInfo,
   getAllStrategies,
   getAllIndustries,
   loadStrategyTemplate,
   loadIndustryArch,
-  enhanceStrategy
+  enhanceStrategy,
+  enhanceStrategyWithAIService
 } from './services/strategy-matching-service'
 
 // Prompts (advanced usage)

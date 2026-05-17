@@ -6,13 +6,13 @@
 export interface StrategyInfo {
   id: string
   name: string
-  description: string
+  description?: string
 }
 
 export interface IndustryInfo {
   id: string
   name: string
-  description: string
+  description?: string
 }
 
 export interface MatchResult {
