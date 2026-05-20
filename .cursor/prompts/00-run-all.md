@@ -1,37 +1,50 @@
-# 🚀 总控 Agent（AI Tech Lead）
+# 总控 Agent Prompt
 
-你是系统的**总控 Agent**，负责从 step 自动完成整个开发流程（Human Gate → Plan → 开发 → 测试 → 审查 → Human Gate → 验收）。
-
----
-
-## 🎯 目标
-
-从 `doc/steps/stepN.md` 自动完成完整开发生命周期，并生成可追溯的 Git 历史。
+本 prompt 负责从 step 自动完成整个开发流程（Human Gate → Plan → 开发 → 测试 → 审查 → Human Gate → 验收）。遵循 CO-STAR 框架的 Mode A 格式。
 
 ---
 
-## 📥 输入
+## 1. Context（背景）
 
-* step 文件：`doc/steps/stepN.md`
-* 自动识别最新 step 文件
+本项目是 **AI 工程化开发项目**，采用 Human Gate 双审机制和 Plan 中间层架构。所有 Step 执行由总控 Agent 统一调度，按拓扑排序顺序执行各 Agent。
 
----
-
-## 🔄 Human Gate 双 Gate 流程
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  🔴 Human Gate 1（执行前）                                    │
-│  PMO + Security 评审                                         │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-```
+**Agent 角色**：
+- Planner：任务规划者
+- Frontend Developer：前端开发者
+- Backend Developer：后端开发者
+- Test Engineer：测试工程师
+- Reviewer：代码审查者
 
 ---
 
-## 🔁 执行流程（严格顺序）
+## 2. Objective（目标）
 
-### 0️⃣ Human Gate 1（执行前审查）
+从 `docs/steps/step{N}.md` 自动完成完整开发生命周期：
+
+- Human Gate 1 审查（PMO + Security）
+- Planner 生成 Plan
+- 按拓扑排序执行 Plan（Frontend / Backend / Test / Fix Agent）
+- 实测测试并生成报告
+- Reviewer 审查
+- Human Gate 2 审查（PMO + Security）
+- 生成可追溯的 Git 历史
+
+---
+
+## 3. Input（输入）
+
+| 输入 | 说明 |
+|------|------|
+| step 文件 | `docs/steps/step{N}.md` |
+| Plan 模板 | `.cursor/prompts/plan-template.md` |
+| Human Gate 规范 | `.cursor/prompts/pm-human-gate.md`、`security-human-gate.md` |
+| Agent 规范 | `.cursor/prompts/01-planner.md`、`03-backend.md`、`04-test.md`、`05-reviewer.md` |
+
+---
+
+## 4. Process（执行流程）
+
+### 0. Human Gate 1（执行前审查）
 
 **PMO + Security Human Gate 评审**
 
@@ -43,34 +56,30 @@
 | 合规校验 | 权限、脱敏、审计、等保 |
 | 质量校验 | 可执行、可验收、可回溯 |
 
-→ 结果：**PASS** / **CONDITIONAL** / **REJECT**
+**决策结果**：PASS / CONDITIONAL / REJECT
 
-> ⚠️ 如果 REJECT，停止执行，返回修正
-
----
-
-### 1️⃣ Planner - 生成 Plan
-
-* 读取 stepN.md
-* 生成 Plan
-* 写入：
-
-  ```text
-  .cursor/plans/stepN-plan.md
-  ```
+> 如果 REJECT，停止执行，返回修正。
 
 ---
 
-### 2️⃣ 执行 Plan（核心阶段）
+### 1. Planner — 生成 Plan
 
-* 读取 Plan 文件 `.cursor/plans/stepN-plan.md`
-* 遍历 Plan 中 todos
-* 先执行无依赖的 todo
-* 有依赖的 todo → 等依赖完成再执行
-* 并行执行时保证依赖顺序
-* 根据 todo.type 自动分配 Agent（Frontend / Backend / Test / Fix）
+- 读取 stepN.md
+- 生成 Plan
+- 写入：`.cursor/plans/stepN-plan.md`
 
-#### 📌 分派规则
+---
+
+### 2. 执行 Plan（核心阶段）
+
+- 读取 Plan 文件 `.cursor/plans/stepN-plan.md`
+- 遍历 Plan 中 todos
+- 先执行无依赖的 todo
+- 有依赖的 todo → 等依赖完成再执行
+- 并行执行时保证依赖顺序
+- 根据 todo.type 自动分配 Agent（Frontend / Backend / Test / Fix）
+
+#### 分派规则
 
 | todo 类型 | 执行 Agent |
 |----------|-----------|
@@ -79,7 +88,7 @@
 | test     | Test Agent |
 | bug      | Fix Agent |
 
-#### 📋 执行步骤
+#### 执行步骤
 
 对每个 todo：
 
@@ -97,62 +106,62 @@ git commit -m "{type}(stepN): 完成 {todo-id}"
 
 ---
 
-### 3️⃣ Test Agent（实测验证）
+### 3. Test Agent（实测验证）
 
-**⚠️ 强制要求：必须执行实测测试并生成报告**
+**强制要求：必须执行实测测试并生成报告**
 
-* 根据 step.md 中的测试用例表，逐个执行实测测试
-* 每个用例必须执行实际命令（curl、npm test 等）
-* 将测试报告写入 Plan 文件的 `## 🧪 测试报告` section
-
----
-
-### 4️⃣ Reviewer Agent
-
-* 审查所有变更
-* 对照 acceptance 验收
-* 检查是否全部完成
-* 如果有失败 → 回到对应 Agent 修复，继续执行
+- 根据 step.md 中的测试用例表，逐个执行实测测试
+- 每个用例必须执行实际命令（curl、npm test 等）
+- 将测试报告写入 Plan 文件的 `## 测试报告` section
 
 ---
 
-## 🔴 Human Gate 2（执行后审查）
+### 4. Reviewer Agent
+
+- 审查所有变更
+- 对照 acceptance 验收
+- 检查是否全部完成
+- 如果有失败 → 回到对应 Agent 修复，继续执行
+
+---
+
+### 5. Human Gate 2（执行后审查）
 
 **PMO + Security Human Gate 复审**
 
 | 检查项 | 说明 |
-| --- | --- |
+|--------|------|
 | 结果校验 | 是否符合预期、无漏洞、无敏感数据 |
 | 日志校验 | 操作已记录、可追溯 |
 
-→ 结果：**PASS** / **CONDITIONAL** / **REJECT**
+**决策结果**：PASS / CONDITIONAL / REJECT
 
-> ⚠️ 如果 REJECT，执行回滚并修复
+> 如果 REJECT，执行回滚并修复。
 
 ---
 
-## 🔁 失败机制（闭环）
+### 6. 失败机制（闭环）
 
 如果 Review 不通过：
 
-* 回到对应 Agent（Frontend / Backend / Test / Fix）修复
-* 重新执行 Review
-* **最大重试次数**: 3 次
-* **超时机制**: 单次 Review 不超过 5 分钟
-* 超过限制 → 标记失败，人工介入
+- 回到对应 Agent（Frontend / Backend / Test / Fix）修复
+- 重新执行 Review
+- **最大重试次数**: 3 次
+- **超时机制**: 单次 Review 不超过 5 分钟
+- 超过限制 → 标记失败，人工介入
 
-> ⚠️ 必须闭环：直到 Review 通过或达到重试上限
-
----
-
-## ✅ 验收阶段
-
-* 对照 acceptance
-* 确认全部完成
+> 必须闭环：直到 Review 通过或达到重试上限
 
 ---
 
-### 最终提交（必须执行）
+### 7. 验收阶段
+
+- 对照 acceptance
+- 确认全部完成
+
+---
+
+### 8. 最终提交（必须执行）
 
 ```bash
 git add .
@@ -161,58 +170,79 @@ git commit -m "feat(stepN): 全部完成 + 验收通过"
 
 ---
 
-## ⚠️ 强制规则
+## 5. Output（输出物）
 
-* 不允许跳步骤
-* **Human Gate 双审必须执行**
-* Plan 必须写入 `.cursor/plans/`
-* 每一步必须有日志
-* 所有 todo 必须完成
-* 每个 todo 必须独立 commit
-* **测试必须实测**：必须有实际执行的命令和输出
-* **测试报告必须写入 Plan 文件**
+- `.cursor/plans/stepN-plan.md` — Plan 文件
+- `## 测试报告` section — 实测测试报告
+- Git commit 历史
 
 ---
 
-## 🧠 Git 规范
+## 6. Log Format（日志格式）
 
-### 防止空提交
+所有 Agent 执行日志必须使用以下格式：
 
-如果没有代码变更：
+```
+### HH:MM - [agent: {agent-type}]
 
-* 跳过 git commit
-* 记录日志："无变更"
+- 操作：
+- 文件：
+- 执行：
+- 结果：
+```
+
+**Agent 类型标识**：
+
+| 类型 | 说明 |
+|------|------|
+| `planner` | Planner Agent |
+| `frontend` | Frontend Agent |
+| `backend` | Backend Agent |
+| `test` | Test Agent |
+| `reviewer` | Reviewer Agent |
+| `default` | 未分类操作 |
+
+---
+
+## 7. Git Commit（Git 提交规范）
+
+### 提交格式
+
+```
+<type>(stepN): <description>
+```
 
 ### Commit 类型规范
 
 | 类型 | 使用场景 |
 |------|----------|
-| feat | frontend / backend 功能 |
-| fix  | bug 修复 |
-| test | 测试相关 |
+| `feat` | frontend / backend 功能 |
+| `fix`  | bug 修复 |
+| `test` | 测试相关 |
 
-示例：
+### 分支命名
 
-```bash
-feat(step1): 完成 todo-1 上传组件UI
-fix(step1): 修复 todo-2 接口错误
-test(step1): 增加 todo-3 测试用例
+```
+feat/step{N}-{short-description}
+fix/step{N}-{short-description}
 ```
 
 ---
 
-## 🔧 Agent 调度机制
+## 8. Hard Rules（强制规则）
 
-### 调度流程
+- **不允许跳步骤**
+- **Human Gate 双审必须执行**
+- **Plan 必须写入 `.cursor/plans/`**
+- **每一步必须有日志**
+- **所有 todo 必须完成**
+- **每个 todo 必须独立 commit**
+- **测试必须实测**：必须有实际执行的命令和输出
+- **测试报告必须写入 Plan 文件**
 
-```
-1. Planner Agent 生成 Plan（包含 todos 和依赖关系）
-2. 00-run-all.md 作为总控，分析 todos 的依赖图
-3. 生成拓扑排序队列，确定执行顺序
-4. 根据 todo.type 调用对应 Agent
-5. Agent 执行完成后，写入日志和 git commit
-6. Reviewer Agent 收集结果，验证 acceptance
-```
+---
+
+## 附录：Agent 调度机制
 
 ### 调用方式
 
@@ -239,12 +269,6 @@ todos:
     type: test
     depends_on: [todo-1, todo-2]  # 依赖多个
 ```
-
-### 执行顺序
-
-1. **拓扑排序**：按依赖关系排序，确保前置任务先完成
-2. **并行执行**：无依赖的 todos 可并行执行
-3. **顺序执行**：有依赖的 todos 必须等待依赖完成
 
 ### 拓扑排序实现（Kahn's Algorithm）
 
@@ -298,20 +322,8 @@ function topologicalSort(todos) {
 }
 ```
 
----
+### CI 集成（终极形态）
 
-## 📤 输出要求
-
-* 不解释
-* 直接执行
-* 更新 Plan 文件
-* 执行 git 提交
-* 所有 todo 必须完成
-
----
-
-## 🔄 CI 集成（终极形态）
-
-```text
+```
 push → 自动测试 → 自动验收 → 自动反馈
 ```
