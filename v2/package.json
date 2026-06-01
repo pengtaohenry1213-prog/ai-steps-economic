@@ -1,0 +1,21 @@
+{
+  "name": "@ai-toolkit/monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "npm run dev --workspace=@ai-toolkit/web",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

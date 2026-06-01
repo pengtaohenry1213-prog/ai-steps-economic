@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "generate:anon-key": "node scripts/generate-anon-key.mjs"
+    "generate:anon-key": "node scripts/generate-anon-key.mjs",
+    "typecheck": "npx vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ai-toolkit/strategy-core": "workspace:*",
     "@element-plus/icons-vue": "^2.3.2",
     "@supabase/supabase-js": "^2.105.4",
     "element-plus": "^2.14.0",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vue-tsc": "^2.2.0"
   }
 }

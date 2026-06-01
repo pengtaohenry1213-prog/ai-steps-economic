@@ -1,0 +1,26 @@
+{
+  "name": "@ai-toolkit/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "npx vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-toolkit/strategy-core": "workspace:*",
+    "@ai-toolkit/ai-service": "workspace:*",
+    "@ai-toolkit/lifecycle-core": "workspace:*",
+    "vue": "^3.5.0",
+    "pinia": "^2.3.0",
+    "element-plus": "^2.14.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "vite": "^6.0.0",
+    "typescript": "^5.3.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

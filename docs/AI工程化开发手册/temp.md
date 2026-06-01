@@ -372,3 +372,22 @@ if (stepN 有前置依赖 && 前置未完成) {
 
   迭代时：
     workflow-dashboard 生成 step4.md → Cursor 执行
+
+---
+
+正确的流程
+
+architecture 阶段（workflow-dashboard）
+     ↓ AI 生成架构文档（包含 Step N: 章节）
+     ↓ 文档保存到 proposalContent
+     ↓
+initialization 阶段（workflow-dashboard）
+     ↓ 从 proposalContent 提取 steps 数组│ │
+     ↓ generateStepDocuments() 生成 step1.md ~ stepN.md│ │
+   ↓
+Cursor 读取 stepN.md 执行开发
+
+---
+
+
+

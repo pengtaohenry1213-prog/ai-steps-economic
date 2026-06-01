@@ -6,6 +6,7 @@ import { saveProposal, loadProposal, deleteProposal as deleteProposalFromDb } fr
 import { saveSnapshot, loadLatestSnapshot, deleteAllSnapshots } from '../services/lifecycleSnapshotService'
 import { validateDocument, getRequiredFields, getCompletenessScore } from '../schemas/documentSchemas'
 import { generateProjectFiles, generateCursorRules, type GeneratedFile } from '../services/projectGenerator'
+import { splitStepsIntoFiles } from '@ai-toolkit/strategy-core'
 
 const STORAGE_KEY = 'lifecycle_dashboard_state'
 const PROJECT_ID = 'default-project'
@@ -146,6 +147,15 @@ export const useLifecycleStore = defineStore('lifecycle', {
           })
         }
 
+        this.saveToStorage()
+      }
+    },
+
+    // 清除阶段内容
+    clearStageContent(stageId: string) {
+      const stage = this.stages.find(s => s.id === stageId)
+      if (stage) {
+        stage.proposalContent = null
         this.saveToStorage()
       }
     },
@@ -456,7 +466,7 @@ export const useLifecycleStore = defineStore('lifecycle', {
         techStack?: string[]
         architectureType?: string
         components?: string[]
-        steps?: Array<{ id: string; title: string; target: string; constraints: string[]; acceptance: string[]; files: string[]; dependsOn: string }>
+        steps?: Array<{ id: string; title: string; v1Reuse: string; milestone: string; target: string; constraints: string[]; acceptance: string[]; files: string[]; risk: string; dependsOn: string }>
       }
 
       console.log('[Initialization] archDoc fullText:', archDoc.fullText?.slice(0, 200))
@@ -507,8 +517,14 @@ export const useLifecycleStore = defineStore('lifecycle', {
       console.log('[Initialization] extracted techStack:', techStack)
       console.log('[Initialization] extracted components:', components)
 
+      // Debug: check fullText availability
+      console.log('[Initialization] archDoc.fullText exists:', !!archDoc.fullText)
+      console.log('[Initialization] archDoc.fullText length:', archDoc.fullText?.length)
+      console.log('[Initialization] archDoc.components:', components)
+
       // Extract steps from architecture if not in structured data
       let steps = archDoc.steps
+      console.log('[Initialization] archDoc.steps exists:', !!archDoc.steps, archDoc.steps?.length)
       if ((!steps || steps.length === 0) && archDoc.fullText) {
         steps = extractStepsFromMarkdown(archDoc.fullText, components)
       }
@@ -530,14 +546,38 @@ export const useLifecycleStore = defineStore('lifecycle', {
         console.log('[Initialization] generatedFiles count:', generatedFiles.length)
         const cursorRules = generateCursorRules()
 
-        // Generate step documents from steps array
-        const stepFiles = generateStepDocuments(steps || [], components || [])
+        // Convert steps to StepDocument format for splitStepsIntoFiles
+        const stepDocs = (steps || []).map((step: any, index: number) => ({
+          stepNumber: index,
+          taskObjective: step.title || '',
+          detailedDescription: step.target || '',
+          outOfScope: [] as string[],
+          v1ReuseRate: step.v1Reuse || '0%',
+          technicalSolution: '',
+          constraints: step.constraints || [],
+          acceptanceCriteria: { functionality: [] as string[], performance: [] as { indicator: string; standard: string }[], security: [] as string[] },
+          testCriteria: { functionality: [] as string[], performance: [] as { indicator: string; standard: string; testMethod: string }[], security: [] as string[] },
+          testAcceptanceFlow: '',
+          role: 'Frontend Agent',
+          associatedRules: [] as string[],
+          associatedPrompts: [] as string[],
+          todos: [] as Array<{ id: string; content: string; status: string }>,
+          involvedFiles: step.files || [],
+          prerequisites: step.dependsOn || '无',
+          prerequisiteOutputs: [] as string[],
+          riskWarnings: [] as Array<{ risk: string; mitigation: string }>,
+          relatedSpecs: [] as string[],
+          milestoneMapping: step.milestone || ''
+        }))
+
+        // Split into individual step files
+        const splitResult = splitStepsIntoFiles(stepDocs)
 
         // All file paths are prefixed with projectName so the zip extracts to v2/dev/{projectName}/
         const allFiles = [
           ...generatedFiles.map(f => ({ ...f, path: `${projectName}/${f.path}` })),
           ...cursorRules.map(r => ({ path: `${projectName}/${r.path}`, content: r.content })),
-          ...stepFiles.map(sf => ({ path: `${projectName}/${sf.path}`, content: sf.content }))
+          ...splitResult.stepFiles.map(sf => ({ path: `${projectName}/doc/steps/${sf.fileName}`, content: sf.content }))
         ]
 
         return { success: true, files: allFiles }
@@ -653,10 +693,13 @@ function extractComponentsFromMarkdown(markdown: string): string[] {
 interface StepInfo {
   id: string
   title: string
+  v1Reuse: string
+  milestone: string
   target: string
   constraints: string[]
   acceptance: string[]
   files: string[]
+  risk: string
   dependsOn: string
 }
 
@@ -676,29 +719,104 @@ function extractStepsFromMarkdown(markdown: string, components: string[]): StepI
     const nextStepStart = nextStepMatch ? stepStart + match[0].length + (nextStepMatch.index || 0) : markdown.length
     const stepContent = markdown.slice(stepStart, nextStepStart)
 
-    // Extract files mentioned in the step
+    // Extract task target (content under 任务目标)
+    let target = stepTitle
+    const targetMatch = stepContent.match(/(?:## 任务目标|## 任务目标\n)[\s\n]*(.+?)(?=\n##|\n#{1,3}|$)/s)
+    if (targetMatch) {
+      target = targetMatch[1].trim().replace(/\n+/g, ' ')
+    }
+
+    // Extract v1复用量
+    let v1Reuse = ''
+    const reuseMatch = stepContent.match(/v1复用量[：:]\s*(\d+%)/)
+    if (reuseMatch) {
+      v1Reuse = reuseMatch[1]
+    }
+
+    // Extract milestone from 里程碑映射
+    let milestone = ''
+    const milestoneRegex = /M(\d+):?\s*([^\uFF08]+)[\uFF08\u0028]Day\s*(\d+)[\uFF09\u0029]/i
+    const milestoneMatch = stepContent.match(milestoneRegex)
+    if (milestoneMatch) {
+      milestone = `M${milestoneMatch[1]}（Day ${milestoneMatch[3]}）`
+    }
+
+    // Extract acceptance criteria
+    const acceptance: string[] = []
+    const acceptanceSection = stepContent.match(/## 验收标准\n([\s\S]*?)(?=\n##|\n#{1,3}|$)/)
+    if (acceptanceSection) {
+      // Extract lines starting with - [ ]
+      const lines = acceptanceSection[1].match(/- \[ \].+?(?=\n|$)/g)
+      if (lines) {
+        for (const line of lines) {
+          const text = line.replace(/^- \[ \]/, '').trim()
+          if (text) acceptance.push(text)
+        }
+      }
+    }
+
+    // If no checkbox style, try bullet points under 功能验收/性能验收/安全验收
+    if (acceptance.length === 0) {
+      const funcSection = stepContent.match(/### 功能验收\n([\s\S]*?)(?=###|## \w)/)
+      if (funcSection) {
+        const bullets = funcSection[1].match(/-\s*(.+)/g)
+        if (bullets) {
+          for (const b of bullets) {
+            const text = b.replace(/^-\s*/, '').trim()
+            if (text && !text.startsWith('|')) acceptance.push(text)
+          }
+        }
+      }
+    }
+
+    // Extract files mentioned in backticks or code blocks
     const files: string[] = []
     const fileMatches = stepContent.matchAll(/`([^`]+\.(vue|ts|tsx|js|jsx))`/g)
     for (const fileMatch of fileMatches) {
       files.push(fileMatch[1])
     }
 
+    // Extract dependency
+    let dependsOn = ''
+    const dependsOnMatch = stepContent.match(/## 前置依赖\n(.+?)(?=\n##|\n#{1,3}|$)/s)
+    if (dependsOnMatch) {
+      const depContent = dependsOnMatch[1].trim()
+      const prevStepMatch = depContent.match(/step(\d+)\.md/)
+      if (prevStepMatch) {
+        dependsOn = `step${prevStepMatch[1]}`
+      } else if (depContent.includes('无')) {
+        dependsOn = ''
+      }
+    }
+
+    // Extract risk level
+    const riskMatch = stepContent.match(/【(高|中|低)】([^：]+)：(.+)/)
+    const risk = riskMatch ? `【${riskMatch[1]}】${riskMatch[2]}` : ''
+
+    // Build complete target with v1 reuse info
+    const completeTarget = v1Reuse
+      ? `${target} - v1复用量${v1Reuse}`
+      : target
+
     steps.push({
       id: `step${stepNum}`,
       title: stepTitle,
-      target: stepTitle,
+      v1Reuse: v1Reuse,
+      milestone: milestone,
+      target: completeTarget,
       constraints: [
-        '遵循前端工程化 SOP',
-        '遵循后端工程化 SOP',
-        '遵循数据库设计规范',
-        '遵循安全工程规范'
+        '遵循前端工程化 SOP（docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md）',
+        '遵循后端工程化 SOP（docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md）',
+        '遵循数据库设计规范（docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md）',
+        '遵循安全工程规范（docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md）'
       ],
-      acceptance: [
+      acceptance: acceptance.length > 0 ? acceptance : [
         '功能可正常运行',
         '单元测试覆盖率 > 70%',
         '无安全漏洞'
       ],
       files: files.length > 0 ? files : [`src/views/${stepTitle}.vue`],
+      risk: risk,
       dependsOn: stepNum > 1 ? `step${stepNum - 1}` : ''
     })
   }
@@ -709,12 +827,14 @@ function extractStepsFromMarkdown(markdown: string, components: string[]): StepI
       steps.push({
         id: `step${index + 1}`,
         title: component,
+        v1Reuse: '待确定',
+        milestone: `M${index + 1}（Day ${(index + 1) * 5}）`,
         target: `实现 ${component} 模块`,
         constraints: [
-          '遵循前端工程化 SOP',
-          '遵循后端工程化 SOP',
-          '遵循数据库设计规范',
-          '遵循安全工程规范'
+          '遵循前端工程化 SOP（docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md）',
+          '遵循后端工程化 SOP（docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md）',
+          '遵循数据库设计规范（docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md）',
+          '遵循安全工程规范（docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md）'
         ],
         acceptance: [
           '功能可正常运行',
@@ -722,6 +842,7 @@ function extractStepsFromMarkdown(markdown: string, components: string[]): StepI
           '无安全漏洞'
         ],
         files: [`src/views/${component}.vue`],
+        risk: '',
         dependsOn: index > 0 ? `step${index}` : ''
       })
     })
@@ -732,12 +853,14 @@ function extractStepsFromMarkdown(markdown: string, components: string[]): StepI
     steps.push({
       id: 'step1',
       title: '基础功能开发',
-      target: '实现项目基础功能模块',
+      v1Reuse: '待确定',
+      milestone: 'M1（Day 5）',
+      target: '实现项目基础功能模块（请根据架构文档补充具体描述）',
       constraints: [
-        '遵循前端工程化 SOP',
-        '遵循后端工程化 SOP',
-        '遵循数据库设计规范',
-        '遵循安全工程规范'
+        '遵循前端工程化 SOP（docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md）',
+        '遵循后端工程化 SOP（docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md）',
+        '遵循数据库设计规范（docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md）',
+        '遵循安全工程规范（docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md）'
       ],
       acceptance: [
         '功能可正常运行',
@@ -745,6 +868,7 @@ function extractStepsFromMarkdown(markdown: string, components: string[]): StepI
         '无安全漏洞'
       ],
       files: ['src/views/Home.vue'],
+      risk: '',
       dependsOn: ''
     })
   }
@@ -766,17 +890,45 @@ function generateStepDocuments(steps: StepInfo[], components: string[]): StepFil
 ## 任务目标
 ${step.target}
 
+## 详细说明
+- v1复用量：${step.v1Reuse}
+- 核心功能：${step.target.replace(/ - v1复用量\d+%/g, '')}
+- 用户交互：待实现时补充
+- 数据流转：待实现时补充
+
+## 里程碑映射
+- ${step.milestone || `M${step.id.replace('step', '')}（Day ${(parseInt(step.id.replace('step', '')) * 5)}）`}
+
 ## 约束条件
 ${step.constraints.map(c => `- ${c}`).join('\n')}
 
 ## 验收标准
+### 功能验收
 ${step.acceptance.map(a => `- [ ] ${a}`).join('\n')}
+
+### 性能验收
+| 指标 | 标准 |
+|------|------|
+| 表格加载 | <2s（1000行数据） |
+| 公式计算 | <100ms（100个公式） |
+
+### 安全验收
+- [ ] 敏感数据字段脱敏
+- [ ] 操作日志记录
 
 ## 涉及文件
 ${step.files.map(f => `- ${f}`).join('\n')}
 
 ## 前置依赖
 ${step.dependsOn ? `- ${step.dependsOn}.md` : '- 无'}
+
+## 风险提示
+${step.risk ? `- ${step.risk}` : '- 【低】无特殊风险'}
+
+## 关联规范
+- 前端工程化 SOP → 组件规范
+- 后端工程化 SOP → API规范
+- 安全工程规范 → 安全要求
 `
 
     stepFiles.push({
@@ -786,4 +938,9 @@ ${step.dependsOn ? `- ${step.dependsOn}.md` : '- 无'}
   }
 
   return stepFiles
+}
+
+function extractReusePercentage(target: string): string {
+  const match = target.match(/(\d+)%/)
+  return match ? match[1] + '%' : '待确定'
 }

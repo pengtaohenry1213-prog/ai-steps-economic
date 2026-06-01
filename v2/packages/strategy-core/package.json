@@ -21,7 +21,8 @@
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "vitest run",
     "test:example": "tsx tests/example.ts",
-    "dev": "tsup src/index.ts --format cjs,esm --dts --watch"
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "strategy",

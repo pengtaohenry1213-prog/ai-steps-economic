@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { createLifecycleCore, createAIService, matchStrategyWithAIService, getAllStrategies, getAllIndustries, enhanceStrategyWithAIService } from '../../../packages'
 import StrategyViewer from './views/StrategyViewer.vue'
+import DocumentGenerator from './views/DocumentGenerator.vue'
 import { useStrategyStore } from './stores/strategyStore'
 
 const lifecycle = createLifecycleCore({ storageKey: 'web-lifecycle' })
@@ -157,6 +158,12 @@ async function testMergeMatch() {
 
     <section v-if="showViewer">
       <StrategyViewer />
+    </section>
+
+    <section>
+      <h2>项目文档生成器（完整链路）</h2>
+      <p class="desc">输入需求，自动生成策略/立项书/需求文档/架构书/Step/执行路线</p>
+      <DocumentGenerator />
     </section>
   </div>
 </template>

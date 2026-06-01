@@ -156,34 +156,45 @@ export async function enhanceStrategyWithAIService(
     userInput
   )
 
-  try {
-    const result = await aiService.chat(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      { model: modelId }
-    )
-    if (!result.success || !result.data) {
-      console.error('AI 服务调用失败:', result.error)
-      return null
-    }
-    const enhancedStrategy = parseStrategyEnhancementResponse(result.data.content)
+  let enhancedStrategy = null
+  let retries = 0
+  const maxRetries = 2
 
-    if (!enhancedStrategy) {
-      return null
+  while (!enhancedStrategy && retries <= maxRetries) {
+    if (retries > 0) {
+      console.warn(`[Strategy Enhancement] 解析失败，重试 ${retries}/${maxRetries}`)
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
-    return {
-      basicResult,
-      userInput,
-      enhancedStrategy,
-      strategyTemplate,
-      industryArch
+    try {
+      const result = await aiService.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        { model: modelId }
+      )
+      if (!result.success || !result.data) {
+        console.error('AI 服务调用失败:', result.error)
+        break
+      }
+      enhancedStrategy = parseStrategyEnhancementResponse(result.data.content)
+    } catch (e) {
+      console.error('策略增强失败:', e)
     }
-  } catch (e) {
-    console.error('增强策略失败:', e)
+    retries++
+  }
+
+  if (!enhancedStrategy) {
     return null
+  }
+
+  return {
+    basicResult,
+    userInput,
+    enhancedStrategy,
+    strategyTemplate,
+    industryArch
   }
 }
 

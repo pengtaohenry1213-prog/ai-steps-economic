@@ -56,4 +56,4 @@ export function normalize<T = unknown>(
 }
 
 export { normalizeOllama } from './ollama'
-export { normalizeMiniMax } from './minimax' }
+export { normalizeMiniMax } from './minimax';

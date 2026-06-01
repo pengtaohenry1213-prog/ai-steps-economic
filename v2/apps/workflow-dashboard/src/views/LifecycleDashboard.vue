@@ -649,8 +649,13 @@ function confirmReset() {
   }).catch(() => {})
 }
 
+/**
+ * 重新开始阶段
+ * @param stageId 阶段 ID
+ */
 function restartStage(stageId: string) {
   const stage = store.stages.find(s => s.id === stageId)
+  console.log('[DEBUG restartStage] stage:', stage)
   if (!stage) return
 
   if (stageId === 'init' || stageId === 'requirement') {
@@ -663,6 +668,12 @@ function restartStage(stageId: string) {
     if (stage.status !== 'in_progress') {
       store.updateStageStatus(stageId, 'in_progress')
     }
+  } else if (stageId === 'architecture') {
+    // 清除现有架构内容，重置状态
+    store.updateStageStatus(stageId, 'in_progress')
+    store.clearStageContent(stageId)
+    // 启动架构生成流程
+    startArchitectureGeneration(stageId)
   }
 }
 
@@ -1699,6 +1710,10 @@ async function startProjectInitialization(stageId: string) {
   }
 
   const result = await store.executeInitialization()
+
+  console.log('[Initialization] result.success:', result.success)
+  console.log('[Initialization] result.files count:', result.files.length)
+  console.log('[Initialization] step files:', result.files.filter(f => f.path.includes('step') || f.path.includes('docs/steps')))
 
   if (result.success) {
     // Get projectName from init stage (where it was properly extracted from proposal)

@@ -25,6 +25,35 @@ export {
   enhanceStrategyWithAIService
 } from './services/strategy-matching-service'
 
+export {
+  generateAllDeliverablesWithAIService,
+  formatProposalAsMarkdown,
+  formatRequirementsAsMarkdown,
+  formatArchitectureAsMarkdown
+} from './services/document-generation-service'
+
+export {
+  generateStepDocumentsFromArchitecture,
+  formatStepAsMarkdown
+} from './services/step-generation-service'
+
+export {
+  splitStepsIntoFiles,
+  getStepFilePath,
+  type SplitStepFile,
+  type SplitResult
+} from './services/step-split-service'
+
+export {
+  generateStepsDevDocument,
+  formatStepsDevAsMarkdown
+} from './services/steps-dev-generation-service'
+
+export {
+  generatePlanFromStep,
+  formatPlanAsMarkdown
+} from './services/plan-generation-service'
+
 // Prompts (advanced usage)
 export {
   buildStrategyMatchingSystemPrompt,

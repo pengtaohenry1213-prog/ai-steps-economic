@@ -1,0 +1,35 @@
+{
+  "name": "@ai-toolkit/ai-service",
+  "version": "1.0.0",
+  "description": "统一 AI 服务 SDK，支持 Ollama 和 OpenAI 兼容 API",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "test": "vitest run",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "ollama",
+    "openai",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  }
+}

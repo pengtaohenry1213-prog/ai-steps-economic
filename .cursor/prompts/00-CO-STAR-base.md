@@ -19,6 +19,7 @@
 指定 AI Agent 的代码风格和输出风格，通过引用 SOP 文档确保一致性。
 
 **引用规范：**
+
 - 前端：`docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md`
 - 后端：`docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md`
 - 数据库：`docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md`
@@ -56,7 +57,7 @@
 
 用于 Planner、Frontend、Backend、Test、Reviewer 等 Agent。
 
-```
+```markdown
 ## 1. Context（背景）
 描述当前任务的背景信息。
 
@@ -125,6 +126,7 @@ Git 提交格式规范。
 ```
 
 **Agent 类型标识：**
+
 - `planner` — Planner Agent
 - `frontend` — Frontend Agent
 - `backend` — Backend Agent
@@ -138,7 +140,7 @@ Git 提交格式规范。
 
 ### 提交格式
 
-```
+```ts
 <type>(stepN): <description>
 
 <optional body>
@@ -157,7 +159,7 @@ Git 提交格式规范。
 
 ### 分支命名
 
-```
+```ts
 feat/step{N}-{short-description}
 fix/step{N}-{short-description}
 ```
@@ -247,7 +249,7 @@ fix/step{N}-{short-description}
 
 所有 Step 执行必须经过双 Human Gate 审核：
 
-```
+```bash
 需求评审
     ↓
 Human Gate 1（执行前审查）
