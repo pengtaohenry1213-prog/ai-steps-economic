@@ -19,7 +19,8 @@ import type { ProcessedFile } from './fileProcessor'
 import { getModelById, type AIModel } from '../config/aiModels'
 import { generateText as callOpenAI } from './aiService'
 
-const SERVER_BASE_URL = import.meta.env.VITE_OLLAMA_SERVER_URL || ''  // Empty = use Vite proxy in dev
+const SERVER_BASE_URL =
+  import.meta.env.VITE_OLLAMA_SERVER_URL || 'http://localhost:3002'
 
 export interface GenerateOptions {
   temperature?: number

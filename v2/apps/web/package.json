@@ -13,9 +13,11 @@
     "@ai-toolkit/strategy-core": "workspace:*",
     "@ai-toolkit/ai-service": "workspace:*",
     "@ai-toolkit/lifecycle-core": "workspace:*",
-    "vue": "^3.5.0",
+    "@element-plus/icons-vue": "^2.3.2",
+    "element-plus": "^2.14.0",
+    "jszip": "^3.10.1",
     "pinia": "^2.3.0",
-    "element-plus": "^2.14.0"
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.0",
