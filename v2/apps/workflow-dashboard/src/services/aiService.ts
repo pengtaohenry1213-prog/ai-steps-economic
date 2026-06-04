@@ -5,8 +5,7 @@
 
 import type { AIModel, ModelProvider } from '../config/aiModels'
 
-const OLLAMA_BASE_URL =
-  import.meta.env.VITE_OLLAMA_SERVER_URL || 'http://localhost:3002'
+const OLLAMA_BASE_URL = import.meta.env.VITE_OLLAMA_SERVER_URL || ''
 
 export interface GenerateOptions {
   temperature?: number

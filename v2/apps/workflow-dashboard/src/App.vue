@@ -17,10 +17,6 @@
                 <el-icon class="el-icon--left"><Document /></el-icon>
                 Step 工作台
               </el-radio-button>
-              <el-radio-button value="docgen">
-                <el-icon class="el-icon--left"><Tickets /></el-icon>
-                项目文档生成器
-              </el-radio-button>
             </el-radio-group>
             <el-tag type="success" effect="dark">
               <el-icon class="el-icon--left"><CircleCheck /></el-icon>
@@ -31,8 +27,7 @@
 
         <el-main>
           <LifecycleDashboard v-if="activeView === 'lifecycle'" />
-          <WorkflowDashboard v-else-if="activeView === 'workflow'" />
-          <DocumentGeneratorFullChain v-else />
+          <WorkflowDashboard v-else />
         </el-main>
       </el-container>
     </div>
@@ -41,12 +36,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Monitor, CircleCheck, List, Document, Tickets } from '@element-plus/icons-vue'
+import { Monitor, CircleCheck, List, Document } from '@element-plus/icons-vue'
 import WorkflowDashboard from './views/WorkflowDashboard.vue'
 import LifecycleDashboard from './views/LifecycleDashboard.vue'
-import DocumentGeneratorFullChain from './views/DocumentGeneratorFullChain.vue'
 
-const activeView = ref<'workflow' | 'lifecycle' | 'docgen'>('lifecycle')
+const activeView = ref<'workflow' | 'lifecycle'>('lifecycle')
 </script>
 
 <style>
