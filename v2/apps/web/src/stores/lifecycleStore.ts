@@ -46,7 +46,7 @@ export const useLifecycleStore = defineStore('lifecycle', {
       }
 
       let hasAnyData = false
-      const stagesToLoad = ['init', 'requirement', 'architecture', 'development', 'testing', 'acceptance']
+      const stagesToLoad = ['init', 'requirement', 'architecture']
       for (const stageId of stagesToLoad) {
         try {
           const { data } = await loadProposal(PROJECT_ID, stageId)
@@ -314,9 +314,10 @@ export const useLifecycleStore = defineStore('lifecycle', {
       if (stage) {
         stage.feedbackLoop = true
       }
-      const developmentStage = this.stages.find(s => s.id === 'development')
-      if (developmentStage && developmentStage.status !== 'completed') {
-        this.currentStageId = 'development'
+      // 反馈循环指向 architecture 阶段（重新生成文档）
+      const architectureStage = this.stages.find(s => s.id === 'architecture')
+      if (architectureStage && architectureStage.status !== 'completed') {
+        this.currentStageId = 'architecture'
       }
       this.saveToStorage()
     },

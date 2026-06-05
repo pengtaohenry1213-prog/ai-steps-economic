@@ -9,6 +9,15 @@
           </span>
           <div class="header-actions">
             <ModelSelector ref="modelSelectorRef" />
+            <el-button
+              size="small"
+              type="primary"
+              @click="generateProjectDocuments"
+              :disabled="isGenerating"
+            >
+              <el-icon class="el-icon--left"><Connection /></el-icon>
+              生成项目文档包
+            </el-button>
             <el-button size="small" @click="confirmReset" :disabled="isGenerating">
               <el-icon class="el-icon--left"><Refresh /></el-icon>
               重置
@@ -34,10 +43,66 @@
         <el-alert
           type="warning"
           title="反馈循环已触发"
-          description="测试/验收/打包/部署阶段发现问题，已回到开发阶段重新修复"
+          description="架构阶段发现问题，已回到架构阶段重新生成"
           :closable="false"
           show-icon
         />
+      </div>
+    </el-card>
+
+    <!-- 用户输入区域 -->
+    <el-card shadow="hover" class="user-input-card">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">
+            <el-icon><Edit /></el-icon>
+            项目需求输入
+          </span>
+        </div>
+      </template>
+      <div class="user-input-content">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-input
+              v-model="userInput"
+              type="textarea"
+              :rows="4"
+              placeholder="请输入项目需求描述，如：基于v1经济模型，进行v2升级，采用Vue3+TS技术栈，目标构建新一代在线协作平台..."
+            />
+          </el-col>
+          <el-col :span="12">
+            <el-upload
+              ref="uploadRef"
+              class="file-upload"
+              action="#"
+              :auto-upload="false"
+              :limit="5"
+              multiple
+              accept=".md,.txt"
+              :on-change="handleDocFileChange"
+              :file-list="fileList"
+            >
+              <el-button size="small" type="primary">
+                <el-icon><Upload /></el-icon>
+                上传文档（可多选）
+              </el-button>
+              <template #tip>
+                <div class="upload-tip">支持 .md 和 .txt 文件，可一次多选，最多 5 个文件</div>
+              </template>
+            </el-upload>
+            <div v-if="fileList.length > 0" class="file-list-display">
+              <el-tag
+                v-for="(file, index) in fileList"
+                :key="index"
+                closable
+                @close="removeDocFile(index)"
+                size="small"
+              >
+                {{ file.name }}
+              </el-tag>
+            </div>
+          </el-col>
+        </el-row>
       </div>
     </el-card>
 
@@ -191,16 +256,6 @@
                 >
                   <el-icon><Refresh /></el-icon>
                   重新生成
-                </el-button>
-                <el-button
-                  v-if="stage.id === 'initialization' && stage.status === 'in_progress' && !stage.proposalContent"
-                  size="small"
-                  type="primary"
-                  @click="startProjectInitialization(stage.id)"
-                  :disabled="isGenerating || !hasProposalContent('architecture')"
-                >
-                  <el-icon><Connection /></el-icon>
-                  生成项目脚手架
                 </el-button>
               </div>
             </template>
@@ -430,7 +485,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, shallowRef } from 'vue'
+import { ref, computed, onMounted, shallowRef, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useLifecycleStore } from '../stores/lifecycleStore'
 import { useWorkflowStore } from '../stores/workflowStore'
@@ -446,8 +501,19 @@ import { getDefaultTemplate } from '../config/industryTemplates'
 import type { ProposalContent, GapAnalysisResult } from '../types'
 import {
   Check, Loading, Close, Minus, Right, Clock, Warning,
-  List, Refresh, Connection, Bottom, Upload, Document, User, Lock
+  List, Refresh, Connection, Bottom, Upload, Document, User, Lock, Edit
 } from '@element-plus/icons-vue'
+import {
+  matchStrategyWithAIService,
+  enhanceStrategyWithAIService,
+  generateAllDeliverablesWithAIService,
+  generateStepDocumentsFromArchitecture,
+  generateStepsDevDocument,
+  formatProposalAsMarkdown,
+  formatRequirementsAsMarkdown,
+  formatArchitectureAsMarkdown,
+  toProposalContentFromAny
+} from '@ai-toolkit/strategy-core'
 
 const store = useLifecycleStore()
 const workflowStore = useWorkflowStore()
@@ -471,7 +537,7 @@ onMounted(async () => {
   isReady.value = true
 })
 
-const FEEDBACK_TRIGGER_STAGES = ['testing', 'acceptance', 'packaging', 'deployment']
+const FEEDBACK_TRIGGER_STAGES = ['architecture']
 
 const showUploadDialog = ref(false)
 const uploadFileList = ref<any[]>([])
@@ -496,6 +562,19 @@ const analysisResult = ref<GapAnalysisResult | null>(null)
 const analysisIsStreaming = ref(false)
 const useSimpleEditor = ref(true)
 const isReady = ref(false)
+
+// 文档生成相关状态（复刻首页的 DocumentGenerator 逻辑）
+const userInput = ref('')
+const activeTab = ref('strategy')
+const fileList = ref<Array<{ name: string; content: string }>>([])
+const uploadRef = ref<any>(null)
+
+const strategyState = reactive({ result: null as any, status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
+const proposalState = reactive({ result: null as any, status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
+const requirementsState = reactive({ result: null as any, status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
+const architectureState = reactive({ result: null as any, status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
+const stepsState = reactive({ result: [] as any[], status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
+const stepsDevState = reactive({ result: null as any, status: 'none' as 'none' | 'generated' | 'generating' | 'error' })
 
 // Human Gate 审批相关
 const showHumanGateDialog = ref(false)
@@ -535,9 +614,9 @@ const feedbackInfoTitle = computed(() => {
 
 const feedbackInfoDesc = computed(() => {
   if (hasFeedbackLoop.value) {
-    return '测试/验收/打包/部署任一阶段失败，将自动回到开发阶段重新修复'
+    return '架构阶段生成失败，将自动回到架构阶段重新生成'
   }
-  return '当测试、验收、打包或部署阶段发现问题时，将触发反馈循环回到开发阶段'
+  return '当架构阶段生成失败时，将触发反馈循环回到架构阶段重新生成'
 })
 
 const currentStageId = computed(() => store.currentStageId)
@@ -601,7 +680,7 @@ function hasConnector(index: number): boolean {
 }
 
 function isFeedbackTarget(stageId: string): boolean {
-  return stageId === 'development' && hasFeedbackLoop.value
+  return stageId === 'architecture' && hasFeedbackLoop.value
 }
 
 function formatTime(timestamp: string): string {
@@ -611,6 +690,343 @@ function formatTime(timestamp: string): string {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 创建 AI 服务实例（复用 DocumentGenerator 的逻辑）
+function createAIService() {
+  return {
+    async chat(messages: Array<{ role: string; content: string }>, options?: { model?: string }) {
+      const model = options?.model || getCurrentModel()?.id || 'MiniMax-M2.7'
+      try {
+        const response = await fetch('/api/ai/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: messages.map(m => ({ role: m.role, content: m.content }))
+          })
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          return { success: false, error: `API error ${response.status}: ${errorText}` }
+        }
+
+        const data = await response.json()
+        if (!data.choices || !data.choices[0]?.message?.content) {
+          return { success: false, error: 'Invalid API response format' }
+        }
+
+        return {
+          success: true,
+          data: {
+            content: data.choices[0].message.content,
+            model: data.model || model
+          }
+        }
+      } catch (error: any) {
+        return { success: false, error: error.message || 'Network error' }
+      }
+    }
+  }
+}
+
+// 获取合并后的输入（用户输入 + 文件内容）
+function getMergedInput(): string {
+  const parts: string[] = []
+  if (userInput.value.trim()) {
+    parts.push(userInput.value.trim())
+  }
+  for (const file of fileList.value) {
+    if (file.content) {
+      parts.push(`\n--- 文件: ${file.name} ---\n${file.content}`)
+    }
+  }
+  return parts.join('\n\n')
+}
+
+// 处理文档文件上传
+function handleDocFileChange(file: any) {
+  const rawFile = file.raw || file
+  const fileName = file.name || rawFile?.name || 'unknown'
+  const existingIndex = fileList.value.findIndex(item => item.name === fileName)
+  const reader = new FileReader()
+
+  reader.onload = (e) => {
+    const content = e.target?.result as string
+    const nextFile = {
+      name: fileName,
+      content
+    }
+
+    if (existingIndex >= 0) {
+      fileList.value.splice(existingIndex, 1, nextFile)
+      return
+    }
+
+    fileList.value.push(nextFile)
+  }
+
+  reader.readAsText(rawFile)
+}
+
+// 移除文档文件
+function removeDocFile(index: number) {
+  fileList.value.splice(index, 1)
+}
+
+// 清除文档缓存
+function clearDocCacheFromStorage(docType?: 'all') {
+  if (!docType || docType === 'all') {
+    localStorage.removeItem('lifecycle_strategy_state')
+    localStorage.removeItem('lifecycle_proposal_state')
+    localStorage.removeItem('lifecycle_requirements_state')
+    localStorage.removeItem('lifecycle_architecture_state')
+    localStorage.removeItem('lifecycle_steps_state')
+    localStorage.removeItem('lifecycle_stepsDev_state')
+  }
+}
+
+// 保存文档状态到 localStorage
+function saveDocState(docType: string, state: any) {
+  localStorage.setItem(`lifecycle_${docType}_state`, JSON.stringify(state))
+}
+
+// 从 localStorage 加载文档状态
+function loadDocState(docType: string, state: any) {
+  try {
+    const saved = localStorage.getItem(`lifecycle_${docType}_state`)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      state.result = parsed.result
+      state.status = parsed.status
+    }
+  } catch (e) {
+    console.error(`[Cache] Failed to load ${docType} state:`, e)
+  }
+}
+
+// 生成项目文档包（复刻首页的 generateAllDocuments 逻辑）
+async function generateProjectDocuments() {
+  const mergedInput = getMergedInput()
+  if (!mergedInput.trim()) {
+    ElMessage.warning('请输入需求描述或上传文件')
+    return
+  }
+
+  isGenerating.value = true
+  try {
+    const aiService = createAIService()
+
+    // 1. 策略匹配（始终需要）
+    if (strategyState.status !== 'generated') {
+      strategyState.status = 'generating'
+      const matchResult = await matchStrategyWithAIService(aiService, { userInput: mergedInput })
+      if (!matchResult.success || !matchResult.data) {
+        ElMessage.error('策略匹配失败: ' + (matchResult.error || '未知错误'))
+        strategyState.status = 'error'
+        return
+      }
+
+      // 2. 策略增强（始终需要，因为是其他文档的输入）
+      const enhancedResult = await enhanceStrategyWithAIService(aiService, matchResult.data, mergedInput)
+      if (!enhancedResult) {
+        ElMessage.error('策略增强失败')
+        strategyState.status = 'error'
+        return
+      }
+
+      strategyState.result = enhancedResult
+      strategyState.status = 'generated'
+      saveDocState('strategy', strategyState)
+
+      // 更新 strategy 阶段（使用 ACL 转换）
+      const strategyStage = store.stages.find(s => s.id === 'strategy')
+      if (strategyStage) {
+        strategyStage.proposalContent = toProposalContentFromAny(enhancedResult as any)
+        strategyStage.status = 'completed'
+        store.saveToStorage()
+      }
+    }
+
+    // 3. 立项书/需求/架构（已生成则跳过）
+    if (proposalState.status !== 'generated') {
+      proposalState.status = 'generating'
+      const deliverablesResult = await generateAllDeliverablesWithAIService(
+        aiService,
+        strategyState.result.basicResult,
+        mergedInput,
+        undefined,
+        strategyState.result.enhancedStrategy
+      )
+      console.log('[Proposal] deliverablesResult:', !!deliverablesResult, 'proposal:', !!deliverablesResult?.proposal)
+      if (deliverablesResult && deliverablesResult.proposal) {
+        proposalState.result = deliverablesResult.proposal
+        proposalState.status = 'generated'
+        saveDocState('proposal', proposalState)
+
+        // 更新 proposal 阶段（使用 ACL 转换）
+        const proposalStage = store.stages.find(s => s.id === 'proposal')
+        if (proposalStage) {
+          proposalStage.proposalContent = toProposalContentFromAny(deliverablesResult.proposal as any)
+          proposalStage.status = 'completed'
+          store.saveToStorage()
+        }
+      } else {
+        console.error('[Proposal] 生成失败或返回数据不完整:', deliverablesResult)
+        proposalState.status = 'error'
+        ElMessage.error('立项书生成失败，请重试')
+      }
+    }
+
+    if (requirementsState.status !== 'generated') {
+      requirementsState.status = 'generating'
+      const deliverablesResult = await generateAllDeliverablesWithAIService(
+        aiService,
+        strategyState.result.basicResult,
+        mergedInput,
+        undefined,
+        strategyState.result.enhancedStrategy
+      )
+      console.log('[Requirements] deliverablesResult:', deliverablesResult)
+      if (deliverablesResult && deliverablesResult.requirements) {
+        requirementsState.result = deliverablesResult.requirements
+        requirementsState.status = 'generated'
+        saveDocState('requirements', requirementsState)
+
+        // 更新 requirement 阶段（使用 ACL 转换）
+        const reqStage = store.stages.find(s => s.id === 'requirement')
+        if (reqStage) {
+          reqStage.proposalContent = toProposalContentFromAny(deliverablesResult.requirements as any)
+          reqStage.status = 'completed'
+          store.saveToStorage()
+        }
+      } else {
+        console.error('[Requirements] 生成失败或返回数据不完整:', deliverablesResult)
+        requirementsState.status = 'error'
+        ElMessage.error('需求文档生成失败，请重试')
+      }
+    }
+
+    if (architectureState.status !== 'generated') {
+      architectureState.status = 'generating'
+      let deliverablesResult = null
+      let retries = 0
+      const maxRetries = 2
+
+      while (!deliverablesResult && retries <= maxRetries) {
+        if (retries > 0) {
+          console.warn(`[Architecture] 生成失败，重试 ${retries}/${maxRetries}`)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+        deliverablesResult = await generateAllDeliverablesWithAIService(
+          aiService,
+          strategyState.result.basicResult,
+          mergedInput,
+          undefined,
+          strategyState.result.enhancedStrategy
+        )
+        retries++
+      }
+
+      console.log('[Architecture] deliverablesResult:', deliverablesResult)
+      if (deliverablesResult && deliverablesResult.architecture) {
+        architectureState.result = deliverablesResult.architecture
+        architectureState.status = 'generated'
+        saveDocState('architecture', architectureState)
+
+        // 更新 architecture 阶段（使用 ACL 转换）
+        const archStage = store.stages.find(s => s.id === 'architecture')
+        if (archStage) {
+          archStage.proposalContent = toProposalContentFromAny(deliverablesResult.architecture as any)
+          archStage.status = 'completed'
+          store.saveToStorage()
+        }
+      } else {
+        console.error('[Architecture] 生成失败或返回数据不完整:', deliverablesResult)
+        architectureState.status = 'error'
+        // 触发反馈循环
+        store.triggerFeedbackLoop('architecture')
+        ElMessage.error('架构文档生成失败，已触发反馈循环')
+      }
+    }
+
+    // 4. Steps（依赖架构，已生成则跳过）
+    console.log('[Steps] Checking condition - stepsState.status:', stepsState.status, 'architectureState.status:', architectureState.status)
+    if (stepsState.status !== 'generated' && architectureState.status === 'generated') {
+      stepsState.status = 'generating'
+      let stepsResultData = null
+      let retries = 0
+      const maxRetries = 2
+
+      try {
+        while (!stepsResultData && retries <= maxRetries) {
+          if (retries > 0) {
+            console.warn(`[Steps] 生成失败，重试 ${retries}/${maxRetries}`)
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+          const archMd = formatArchitectureAsMarkdown(architectureState.result)
+          console.log('[Steps] archMd length:', archMd?.length)
+          stepsResultData = await generateStepDocumentsFromArchitecture(aiService, archMd)
+          console.log('[Steps] stepsResultData:', stepsResultData?.length)
+          retries++
+        }
+
+        if (stepsResultData && stepsResultData.length > 0) {
+          stepsState.result = stepsResultData
+          stepsState.status = 'generated'
+          saveDocState('steps', stepsState)
+
+          // 更新 steps 阶段
+          const stepsStage = store.stages.find(s => s.id === 'steps')
+          if (stepsStage) {
+            stepsStage.proposalContent = { fullText: JSON.stringify(stepsResultData) } as any
+            stepsStage.status = 'completed'
+            store.saveToStorage()
+          }
+
+          // 5. StepsDev（依赖 Steps，已生成则跳过）
+          if (stepsDevState.status !== 'generated') {
+            stepsDevState.status = 'generating'
+            const stepsDevResultData = await generateStepsDevDocument(aiService, stepsResultData)
+            console.log('[StepsDev] stepsDevResultData:', !!stepsDevResultData)
+            if (stepsDevResultData) {
+              stepsDevState.result = stepsDevResultData
+              stepsDevState.status = 'generated'
+              saveDocState('stepsDev', stepsDevState)
+
+              // 更新 execution 阶段
+              const executionStage = store.stages.find(s => s.id === 'execution')
+              if (executionStage) {
+                executionStage.proposalContent = { fullText: JSON.stringify(stepsDevResultData) } as any
+                executionStage.status = 'completed'
+                store.saveToStorage()
+              }
+            } else {
+              stepsDevState.status = 'error'
+              ElMessage.error('执行路线生成失败')
+            }
+          }
+        } else {
+          console.warn('[Steps] 生成结果为空')
+          stepsState.status = 'error'
+          ElMessage.error('Steps 生成失败，请重试')
+        }
+      } catch (e) {
+        console.error('Steps generation error:', e)
+        stepsState.status = 'error'
+        ElMessage.error('Steps 生成异常: ' + (e as Error).message)
+      }
+    } else {
+      console.log('[Steps] Skipped - stepsState.status:', stepsState.status, 'architectureState.status:', architectureState.status)
+    }
+
+    ElMessage.success('文档生成成功')
+  } catch (error: any) {
+    ElMessage.error('生成失败: ' + (error.message || '未知错误'))
+  } finally {
+    isGenerating.value = false
+  }
 }
 
 function startStage(stageId: string) {
@@ -681,23 +1097,7 @@ function completeStage(stageId: string) {
   const stage = store.stages.find(s => s.id === stageId)
   if (!stage) return
 
-  // initialization 阶段：检查项目文件是否生成，跳过 proposalContent 检查
-  if (stageId === 'initialization') {
-    const initStage = store.stages.find(s => s.id === 'initialization')
-    // 检查是否有初始化产物（proposalContent 中包含 steps 信息或已完成项目生成）
-    if (!initStage?.proposalContent && !initStage?.steps?.length) {
-      ElMessage.warning('请先生成项目脚手架')
-      return
-    }
-    // initialization 阶段不需要 Human Gate，直接完成
-    store.updateStageStatus(stageId, 'completed', { steps: workflowStore.steps, updateStepStatus: workflowStore.updateStepStatus })
-    store.nextStage()
-    store.saveFullSnapshot(workflowStore.steps)
-    ElMessage.success('初始化阶段已完成')
-    return
-  }
-
-  // 其他阶段：必须先有 proposalContent
+  // 必须先有 proposalContent
   if (!stage.proposalContent) {
     ElMessage.warning('请先生成文档内容')
     return

@@ -59,11 +59,18 @@ export const LIFECYCLE_STEP_TEMPLATES: Record<string, {
   roles: string[]
   techLeadId?: string
 }> = {
-  init: {
+  strategy: {
     todos: [
-      { type: 'backend', content: '市场可行性分析', status: 'pending', depends_on: [] },
-      { type: 'backend', content: '竞品调研', status: 'pending', depends_on: [] },
-      { type: 'backend', content: '收益评估', status: 'pending', depends_on: [] }
+      { type: 'backend', content: '策略匹配', status: 'pending', depends_on: [] },
+      { type: 'backend', content: '策略增强', status: 'pending', depends_on: ['strategy-1'] }
+    ],
+    humanGateRequired: false,
+    output: '策略文档',
+    roles: ['TechLead']
+  },
+  proposal: {
+    todos: [
+      { type: 'backend', content: '立项书生成', status: 'pending', depends_on: [] }
     ],
     humanGateRequired: true,
     output: '立项书',
@@ -90,83 +97,23 @@ export const LIFECYCLE_STEP_TEMPLATES: Record<string, {
     output: '架构文档',
     roles: ['TechLead']
   },
-  initialization: {
+  steps: {
     todos: [
-      { type: 'frontend', content: '项目骨架搭建', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '代码规范制定', status: 'pending', depends_on: ['initialization-1'] },
-      { type: 'backend', content: '依赖安装配置', status: 'pending', depends_on: ['initialization-1'] },
-      { type: 'backend', content: 'Cursor Rules 配置', status: 'pending', depends_on: ['initialization-3'] }
+      { type: 'frontend', content: 'Steps 生成', status: 'pending', depends_on: [] },
+      { type: 'frontend', content: 'Steps 验证', status: 'pending', depends_on: ['steps-1'] }
     ],
     humanGateRequired: false,
-    output: '可运行项目',
+    output: 'Steps 文档',
     roles: ['Developer']
   },
-  development: {
+  execution: {
     todos: [
-      { type: 'frontend', content: '前端组件开发', status: 'pending', depends_on: [] },
-      { type: 'backend', content: 'API 接口开发', status: 'pending', depends_on: ['development-1'] }
+      { type: 'frontend', content: '执行路线生成', status: 'pending', depends_on: [] },
+      { type: 'frontend', content: '执行路线验证', status: 'pending', depends_on: ['execution-1'] }
     ],
     humanGateRequired: false,
-    output: '代码',
+    output: '执行路线',
     roles: ['Developer']
-  },
-  testing: {
-    todos: [
-      { type: 'test', content: 'AI 专项测试设计', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '单元测试', status: 'pending', depends_on: [] },
-      { type: 'test', content: '集成测试', status: 'pending', depends_on: ['testing-1', 'testing-2'] }
-    ],
-    humanGateRequired: true,
-    output: '测试报告',
-    roles: ['Tester', 'Developer']
-  },
-  acceptance: {
-    todos: [
-      { type: 'frontend', content: '验收文档生成', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '验收整理与导出', status: 'pending', depends_on: ['acceptance-1'] }
-    ],
-    humanGateRequired: true,
-    output: '验收报告',
-    roles: ['PM', 'PMO']
-  },
-  packaging: {
-    todos: [
-      { type: 'backend', content: 'Dockerfile 编写', status: 'pending', depends_on: [] },
-      { type: 'backend', content: '部署脚本配置', status: 'pending', depends_on: ['packaging-1'] },
-      { type: 'frontend', content: '本地构建验证', status: 'pending', depends_on: ['packaging-1'] }
-    ],
-    humanGateRequired: false,
-    output: '镜像/包',
-    roles: ['Developer']
-  },
-  deployment: {
-    todos: [
-      { type: 'backend', content: '多环境部署方案', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '本地调试', status: 'pending', depends_on: ['deployment-1'] }
-    ],
-    humanGateRequired: false,
-    output: '运行服务',
-    roles: ['Developer', 'TechLead']
-  },
-  operation: {
-    todos: [
-      { type: 'backend', content: '日志分析系统', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '监控告警配置', status: 'pending', depends_on: ['operation-1'] },
-      { type: 'backend', content: '热更新机制', status: 'pending', depends_on: ['operation-1'] }
-    ],
-    humanGateRequired: false,
-    output: '监控告警',
-    roles: ['Developer']
-  },
-  iteration: {
-    todos: [
-      { type: 'backend', content: '需求收集分析', status: 'pending', depends_on: [] },
-      { type: 'frontend', content: '优化方案生成', status: 'pending', depends_on: ['iteration-1'] },
-      { type: 'frontend', content: '开发实现', status: 'pending', depends_on: ['iteration-2'] }
-    ],
-    humanGateRequired: true,
-    output: '新版本',
-    roles: ['PM', 'Developer']
   }
 }
 
@@ -259,17 +206,12 @@ export interface GapAnalysisResult {
 }
 
 export const LIFECYCLE_STAGES = [
-  { id: 'init', name: '立项', label: 'Init' },
+  { id: 'strategy', name: '策略', label: 'Strategy' },
+  { id: 'proposal', name: '立项书', label: 'Proposal' },
   { id: 'requirement', name: '需求', label: 'Requirement' },
   { id: 'architecture', name: '架构', label: 'Architecture' },
-  { id: 'initialization', name: '初始化', label: 'Init Project' },
-  { id: 'development', name: '开发', label: 'Development' },
-  { id: 'testing', name: '测试', label: 'Testing' },
-  { id: 'acceptance', name: '验收', label: 'Acceptance' },
-  { id: 'packaging', name: '打包', label: 'Packaging' },
-  { id: 'deployment', name: '部署', label: 'Deployment' },
-  { id: 'operation', name: '运维', label: 'Operation' },
-  { id: 'iteration', name: '迭代', label: 'Iteration' }
+  { id: 'steps', name: 'Steps', label: 'Steps' },
+  { id: 'execution', name: '执行路线', label: 'Execution' }
 ] as const
 
 export interface StageSpec {
@@ -284,9 +226,13 @@ export interface StageSpec {
 }
 
 export const STAGE_SPECS: Record<string, StageSpec[]> = {
-  init: [
-    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '市场分析、竞品分析Prompt' },
-    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '团队角色定义' }
+  strategy: [
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '策略匹配Prompt' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '策略增强规范' }
+  ],
+  proposal: [
+    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '立项书生成Prompt' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '立项书规范' }
   ],
   requirement: [
     { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: 'PRD生成、需求分析Prompt' },
@@ -298,45 +244,13 @@ export const STAGE_SPECS: Record<string, StageSpec[]> = {
     { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
     { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' }
   ],
-  initialization: [
-    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
-    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
-    { title: 'Cursor使用规范', path: 'docs/AI工程化开发手册/Cursor 使用规范（AI 工程化开发版）.md', category: 'cursor' },
-    { title: 'Claude Code工作流', path: 'docs/AI工程化开发手册/Claude Code 工作流（工程化 AI 开发版）.md', category: 'cursor' }
+  steps: [
+    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend', description: 'Steps生成规范' },
+    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: 'Steps验证规范' }
   ],
-  development: [
-    { title: '前端工程化SOP', path: 'docs/AI工程化开发手册/前端工程化 SOP（Vue3 + TS + Vben Admin）.md', category: 'frontend' },
-    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend' },
-    { title: '数据库设计规范', path: 'docs/AI工程化开发手册/数据库设计规范（AI 工程化版）.md', category: 'database' },
-    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security' },
-    { title: 'AI生成代码审查清单', path: 'docs/AI工程化开发手册/AI生成代码审查清单（AI 工程化开发版）.md', category: 'process' },
-    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing' },
-    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git' }
-  ],
-  testing: [
-    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing' },
-    { title: 'AI安全审查清单', path: 'docs/AI工程化开发手册/AI安全审查清单.md', category: 'security' },
-    { title: '后端工程化SOP', path: 'docs/AI工程化开发手册/后端工程化 SOP（Node.js + NestJS）.md', category: 'backend', description: '测试部分' }
-  ],
-  acceptance: [
-    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '文档生成Prompt' },
-    { title: 'AI工程化团队规范', path: 'docs/AI工程化开发手册/AI工程化团队规范（企业级）.md', category: 'process', description: '文档自动生成' }
-  ],
-  packaging: [
-    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security', description: '依赖漏洞扫描' },
-    { title: 'Vercel部署规范', path: 'docs/AI工程化开发手册/Vercel 部署规范（AI 工程化开发版）.md', category: 'process' }
-  ],
-  deployment: [
-    { title: 'Vercel部署规范', path: 'docs/AI工程化开发手册/Vercel 部署规范（AI 工程化开发版）.md', category: 'process' },
-    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git', description: '环境分支管理' }
-  ],
-  operation: [
-    { title: 'Bug排查SOP', path: 'docs/AI工程化开发手册/Bug 排查 SOP（AI 工程化开发版）.md', category: 'testing', description: '日志分析、根因定位' },
-    { title: '安全工程规范', path: 'docs/AI工程化开发手册/安全工程规范（AI 工程化版）.md', category: 'security', description: '安全监控' }
-  ],
-  iteration: [
-    { title: 'Git规范', path: 'docs/AI工程化开发手册/Git 规范（AI 工程化开发版）.md', category: 'git' },
-    { title: 'Prompt模板库', path: 'docs/AI工程化开发手册/Prompt 模板库（AI 工程化开发版）.md', category: 'prompt', description: '需求分析Prompt' }
+  execution: [
+    { title: 'Claude Code工作流', path: 'docs/AI工程化开发手册/Claude Code 工作流（工程化 AI 开发版）.md', category: 'cursor', description: '执行路线规范' },
+    { title: 'Cursor使用规范', path: 'docs/AI工程化开发手册/Cursor 使用规范（AI 工程化开发版）.md', category: 'cursor', description: '执行验证规范' }
   ]
 }
 
