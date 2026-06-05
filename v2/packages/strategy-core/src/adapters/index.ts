@@ -11,23 +11,23 @@ export { standardizeEnhancedStrategy, toOriginalEnhancedStrategy } from './enhan
 export {
   toProposalContent,
   toProposalDocument,
-  formatProposalAsMarkdown,
+  formatProposalDocumentAsMarkdown,
   toProposalContentFromAny,
+  toRequirementsContent,
+  toArchitectureContent,
+  isProposalDocument,
 } from './proposalAdapter'
 
 import type { ProposalDocument } from '../types'
-import type { ProposalContent } from './proposalAdapter'
+import { isProposalDocument, toProposalContent } from './proposalAdapter'
 
 /**
  * ACL 入口函数
  * 将项目 A 的数据结构转换为项目 B 的 ProposalContent
  */
-export function aclToB<T>(data: T): ProposalContent | null {
+export function aclToB<T>(data: T) {
   if (isProposalDocument(data)) {
     return toProposalContent(data as ProposalDocument)
   }
   return null
 }
-
-// 重新导出类型供外部使用
-export type { ProposalContent }

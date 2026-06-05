@@ -2,7 +2,7 @@
  * 适配器注册表
  */
 
-import type { AdapterFn, AdapterRegistry, StandardResponse } from '../types'
+import type { AdapterFn, AdapterRegistry, StandardResponse, RawResponse } from '../types'
 import { normalizeOllama } from './ollama'
 import { normalizeMiniMax } from './minimax'
 
@@ -51,8 +51,8 @@ export function normalize<T = unknown>(
   model: string,
   duration: number = 0
 ): StandardResponse<T> {
-  const adapter = getAdapter(model)
-  return adapter(raw, model, duration)
+  const adapter = getAdapter(model) as AdapterFn<T>
+  return adapter(raw as RawResponse, model, duration)
 }
 
 export { normalizeOllama } from './ollama'

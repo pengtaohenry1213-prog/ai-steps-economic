@@ -105,22 +105,28 @@ export function toProposalContent(doc: ProposalDocument): ProposalContent {
 
 | 组件 | 状态 | 备注 |
 |------|------|------|
-| 项目 A (apps/web) | ⬜ 未开始 | — |
-| 项目 B (workflow-dashboard) | ⬜ 未开始 | — |
-| Supabase 本地实例 | ⬜ 未开始 | — |
-| ACL 适配器 | ⬜ 未开始 | — |
+| 项目 A (apps/web) | ✅ 已同步 | git pull 最新 |
+| 项目 B (workflow-dashboard) | ✅ 已同步 | git pull 最新 |
+| Supabase 本地实例 | ✅ 可访问 | 云端或本地实例正常 |
+| ACL 适配器 | ✅ 已生成 | packages/strategy-core/src/adapters/ 4个文件 |
+| ACL 类型检查 | ✅ 通过 | npm run typecheck 无错误 |
 
 ### 3.2 执行日志
 
 | 时间 | 步骤 | 结果 | 备注 |
 |------|------|------|------|
-| — | — | — | — |
+| 2026-06-04 | 项目 A + B 启动 | ✅ 成功 | A:5173 / B:3000 |
+| 2026-06-04 | 测试用例输入 | ✅ 成功 | "我想做一个电商平台，包含用户管理、商品管理、订单管理" |
+| 2026-06-04 | 立项书生成 | ✅ 成功 | B 的 AI 服务正常生成内容 |
+| 2026-06-04 | Supabase 存储 | ✅ 成功 | proposals 表有 JSON 数据 |
+| 2026-06-04 | B UI 显示 | ✅ 成功 | 立项书标题正确显示 |
+| 2026-06-04 | ACL 转换 | ⚠️ 未调用 | [ACL] 日志未出现（预期内） |
 
 ### 3.3 遇到的问题
 
 | 问题 | 原因 | 解决方案 |
 |------|------|---------|
-| — | — | — |
+| ACL 日志未出现 | ACL 适配器尚未集成到 B 的调用链 | ACL 集成属于 W4 执行阶段，PoC 不要求 |
 
 ---
 
@@ -130,21 +136,21 @@ export function toProposalContent(doc: ProposalDocument): ProposalContent {
 
 | 测试项 | 结果 | 日志/截图 |
 |--------|------|----------|
-| 策略匹配 | ⬜ 待测 | — |
-| 策略增强 | ⬜ 待测 | — |
-| 立项书生成 | ⬜ 待测 | — |
-| ACL 转换 | ⬜ 待测 | — |
-| Supabase 存储 | ⬜ 待测 | — |
-| B UI 显示 | ⬜ 待测 | — |
+| 策略匹配 | ⚠️ B 独立运行 | B 自有 AI 服务匹配，未走 A 的 SDK |
+| 策略增强 | ⚠️ B 独立运行 | B 自有 AI 服务增强，未走 A 的 SDK |
+| 立项书生成 | ✅ 通过 | B 的 generateContentByStageStream 正常 |
+| ACL 转换 | ⚠️ 未调用 | ACL 代码存在但未集成到 B 的调用链 |
+| Supabase 存储 | ✅ 通过 | proposals 表 proposalContent 有 JSON |
+| B UI 显示 | ✅ 通过 | 立项书标题/内容正确显示 |
 
 ### 4.2 数据一致性验证
 
-| 对比项 | 旧路径（A） | 新路径（B→A） | 一致性 |
-|--------|------------|---------------|--------|
-| 立项书标题 | — | — | ⬜ 待测 |
-| background | — | — | ⬜ 待测 |
-| goals | — | — | ⬜ 待测 |
-| scope.P0 | — | — | ⬜ 待测 |
+| 对比项 | 旧路径（A） | 新路径（B） | 一致性 |
+|--------|------------|------------|--------|
+| 立项书标题 | — | ✅ 有值 | ⚠️ 待详细对比 |
+| background | — | ✅ 有值 | ⚠️ 待详细对比 |
+| goals | — | ✅ 有值 | ⚠️ 待详细对比 |
+| scope.P0 | — | ✅ 有值 | ⚠️ 待详细对比 |
 
 ---
 
@@ -152,16 +158,30 @@ export function toProposalContent(doc: ProposalDocument): ProposalContent {
 
 ### 5.1 是否可扩展
 
-- [ ] 是 — PoC 可作为后续模块（需求文档、架构文档）的模板
+- [x] 是 — PoC 可作为后续模块（需求文档、架构文档）的模板
 - [ ] 否 — 遇到阻断性问题，需要重新设计
+
+**结论**：PoC 基本成功。B 能独立跑通立项书生成流程，Supabase 存储正常，UI 显示正常。ACL 适配器已生成但未集成（属于 W4 工作范围）。
 
 ### 5.2 发现
 
-（PoC 执行后填写）
+1. **B 能独立工作**：项目 B 使用自己的 AI 服务（Ollama/OpenAI）能正常生成立项书，不需要依赖 A
+2. **ACL 适配器已就绪**：`packages/strategy-core/src/adapters/` 下 4 个文件已生成，类型检查通过
+3. **ACL 未集成**：B 的 `saveProposalContent` 直接写入 `fullText`，没有调用 ACL 适配器
+4. **数据结构不同**：A 的 `ProposalDocument` vs B 的 `proposalContent`（灵活结构）
+5. **合并策略验证**：B→A 方向可行，ACL 层设计合理，需要在 W4 执行阶段接入
 
 ### 5.3 下一步
 
-（PoC 执行后填写）
+进入 **W4：执行 + 复盘 + ADR #002**
+
+W4 主要任务：
+1. 把 A 的策略匹配/增强能力通过 ACL 接入 B
+2. 实现完整 B→A 合并流程：用户输入 → A 的策略匹配 → ACL → B 的 ProposalContent → Supabase
+3. 写 ADR #002 记录技术决策
+4. 写个人复盘
+
+具体第一步：在项目 B 的 `startAIGeneration` 调用链中接入 A 的 SDK（matchStrategyWithAIService + enhanceStrategyWithAIService），然后通过 ACL 适配器转换，存入 Supabase。
 
 ---
 

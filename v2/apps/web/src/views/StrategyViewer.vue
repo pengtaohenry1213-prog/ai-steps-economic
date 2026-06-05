@@ -20,7 +20,7 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN')
 }
 
-function getConfidenceColor(confidence: number): string {
+function getConfidenceColor(confidence: number): 'success' | 'warning' | 'info' {
   if (confidence >= 0.9) return 'success'
   if (confidence >= 0.8) return 'warning'
   return 'info'

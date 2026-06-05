@@ -3,11 +3,12 @@
  * A 的 ProposalDocument ↔ B 的 ProposalContent 双向转换
  */
 
-import type { ProposalDocument } from '../types'
+import type { ProposalDocument, EnhancedStrategy, RequirementsDocument, ArchitectureDocument } from '../types'
+import { formatRequirementsAsMarkdown, formatArchitectureAsMarkdown } from '../services/document-generation-service'
 
 // 导入 B 的 ProposalContent 类型（路径相对于 adapters 目录）
 // 注意：实际使用时可能需要根据项目结构调整导入路径
-interface ProposalContent {
+export interface ProposalContent {
   name?: string
   type?: string
   decisionMakers?: string[]
@@ -70,14 +71,70 @@ export function toProposalContent(doc: ProposalDocument): ProposalContent {
       pmo: doc.humanGate?.pmo ?? [],
       security: doc.humanGate?.security ?? [],
     },
-    fullText: formatProposalAsMarkdown(doc),
+    fullText: formatProposalDocumentAsMarkdown(doc),
   }
 }
 
 /**
- * B 的 ProposalContent → A 的 ProposalDocument
- * 用于：从 Supabase 读取后还原为 A 的格式（如果需要）
+ * 将 RequirementsDocument 转换为 B 的 ProposalContent 结构
+ * 用于：需求文档通过 ACL 存储到 Supabase
  */
+export function toRequirementsContent(doc: RequirementsDocument): ProposalContent {
+  return {
+    name: doc.projectName,
+    type: `需求文档-${doc.version}`,
+    decisionMakers: [doc.basicInfo.productManager, doc.basicInfo.techLead, doc.basicInfo.testLead].filter(Boolean),
+    background: doc.overview.background,
+    currentIssues: [doc.overview.goals.nonGoals.join(', ')].filter(Boolean),
+    goals: [doc.overview.goals.core],
+    scope: {
+      inScope: {
+        P0: doc.overview.scope.included.slice(0, 5),
+        P1: doc.overview.scope.included.slice(5),
+      },
+      outScope: doc.overview.scope.excluded,
+    },
+    acceptance: {
+      functionality: doc.testStrategy.acceptanceCriteria,
+      performance: doc.nonFunctionalRequirements.performance,
+      security: doc.nonFunctionalRequirements.security,
+    },
+    fullText: formatRequirementsAsMarkdown(doc),
+  }
+}
+
+/**
+ * 将 ArchitectureDocument 转换为 B 的 ProposalContent 结构
+ * 用于：架构文档通过 ACL 存储到 Supabase
+ */
+export function toArchitectureContent(doc: ArchitectureDocument): ProposalContent {
+  const techStackStr = [
+    ...doc.techStack.frontend.map(t => t.technology),
+    ...doc.techStack.backend.map(t => t.technology),
+    ...doc.techStack.database.map(t => t.technology),
+    ...doc.techStack.ai.map(t => t.technology),
+  ].join(', ')
+
+  return {
+    name: doc.projectType,
+    type: '架构文档',
+    background: `技术栈：${techStackStr}`,
+    currentIssues: doc.architectureLayers,
+    goals: [doc.techStack.frontend[0]?.category ?? '待确定'],
+    scope: {
+      inScope: {
+        P0: doc.modules.frontend.map(m => m.module),
+        P1: doc.modules.backend.map(m => m.module),
+      },
+    },
+    acceptance: {
+      functionality: ['架构设计合理', '模块划分清晰'],
+      performance: {},
+      security: [],
+    },
+    fullText: formatArchitectureAsMarkdown(doc),
+  }
+}
 export function toProposalDocument(content: ProposalContent): ProposalDocument {
   return {
     projectName: content.name ?? '',
@@ -211,7 +268,7 @@ function normalizeHumanGate(
  * 将 ProposalDocument 格式化为 Markdown 字符串
  * 用于 B 的 fullText 字段
  */
-export function formatProposalAsMarkdown(doc: ProposalDocument): string {
+export function formatProposalDocumentAsMarkdown(doc: ProposalDocument): string {
   const lines: string[] = []
 
   lines.push(`# ${doc.projectName}（${doc.projectType}）`)
@@ -256,23 +313,57 @@ export function formatProposalAsMarkdown(doc: ProposalDocument): string {
 /**
  * ACL 层的入口函数
  * 根据传入的数据类型自动选择合适的适配器
+ *
+ * 支持两种模式：
+ * - 完整模式：输入 ProposalDocument，返回结构化的 ProposalContent
+ * - 简化模式：输入 string（markdown），返回只有 fullText 的 ProposalContent
  */
 export function toProposalContentFromAny(
-  data: ProposalDocument | EnhancedStrategy | any
+  data: ProposalDocument | string | any
 ): ProposalContent | null {
   if (isProposalDocument(data)) {
+    // 完整模式：A 的 ProposalDocument → B 的 ProposalContent
     return toProposalContent(data)
   }
-  // 如果是其他类型，返回 null 并记录 warn
+  if (typeof data === 'string') {
+    // 简化模式：markdown 文本 → 只有 fullText 的 ProposalContent
+    return { fullText: data }
+  }
+  // 如果是对象但不是结构化的 ProposalDocument
+  if (typeof data === 'object' && data !== null) {
+    // 如果有 fullText，走简化模式
+    if (typeof data.fullText === 'string') {
+      return { fullText: data.fullText }
+    }
+    // 其他情况，记录 warn 并返回 null
+    console.warn('[ACL] Unknown object type for toProposalContent:', Object.keys(data))
+    return null
+  }
+  // 其他情况，记录 warn 并返回 null
   console.warn('[ACL] Unknown data type for toProposalContent:', typeof data)
   return null
 }
 
-function isProposalDocument(data: any): data is ProposalDocument {
-  return (
-    data &&
-    typeof data.projectName === 'string' &&
-    typeof data.projectType === 'string' &&
-    Array.isArray(data.decisionMakers)
-  )
+export function isProposalDocument(data: any): data is ProposalDocument {
+  // 如果没有任何结构化字段（有 fullText 但没有 name/type/projectName/projectType），走简化模式
+  const hasProjectName = typeof data?.projectName === 'string' && data.projectName.length > 0
+  const hasProjectType = typeof data?.projectType === 'string' && data.projectType.length > 0
+  const hasName = typeof data?.name === 'string' && data.name.length > 0
+  const hasType = typeof data?.type === 'string' && data.type.length > 0
+  const hasFullText = typeof data?.fullText === 'string'
+
+  // 如果没有任何结构化字段（有 fullText 但没有 name/type/projectName/projectType），走简化模式
+  if (hasFullText && !hasName && !hasType && !hasProjectName && !hasProjectType) {
+    return false
+  }
+
+  // A 的 ProposalDocument 有 projectName（不是 name）
+  if (hasProjectName && hasProjectType) {
+    return true
+  }
+  // B 的 ProposalContent 有 name 和 type
+  if (hasName && hasType) {
+    return true
+  }
+  return false
 }

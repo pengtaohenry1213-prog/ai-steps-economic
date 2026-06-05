@@ -1,10 +1,8 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolve } from 'path'
+import path from 'path'
 import fs from 'fs'
 import JSZip from 'jszip'
-
-const env = loadEnv('', process.cwd(), '')
 
 export default defineConfig({
   plugins: [
@@ -16,7 +14,7 @@ export default defineConfig({
           if (req.url === '/api/save-project') {
             try {
               const chunks: Buffer[] = []
-              for await (const chunk of req as any) {
+              for await (const chunk of req) {
                 chunks.push(chunk)
               }
               const body = JSON.parse(Buffer.concat(chunks).toString())
@@ -30,9 +28,11 @@ export default defineConfig({
               }
 
               const targetPath = '/Users/taopeng/workspace/AI_2026/ai-steps-economic/v2/dev'
+              // Determine project name from first file path (e.g., "my-project/package.json" -> "my-project")
               const projectName = files.length > 0 ? files[0].path.split('/')[0] : 'project'
               const projectCursorDir = '/Users/taopeng/workspace/AI_2026/ai-steps-economic/.cursor'
 
+              // Read .cursor rules from project directory
               function readCursorRules(dirPath: string, basePath: string = ''): Array<{ path: string; content: string }> {
                 const rules: Array<{ path: string; content: string }> = []
                 if (!fs.existsSync(dirPath)) return rules
@@ -45,6 +45,7 @@ export default defineConfig({
                   if (entry.isDirectory()) {
                     rules.push(...readCursorRules(fullPath, relativePath))
                   } else if (entry.isFile()) {
+                    // Copy all rule files and prompts
                     if (entry.name.endsWith('.mdc') || entry.name.endsWith('.md') || entry.name === 'settings.json' || basePath === 'prompts') {
                       const content = fs.readFileSync(fullPath, 'utf-8')
                       rules.push({ path: `${projectName}/.cursor/${relativePath}`, content })
@@ -60,30 +61,31 @@ export default defineConfig({
               for (const file of files) {
                 zip.file(file.path, file.content)
               }
+              // Add .cursor rules to zip
               for (const rule of cursorRules) {
                 zip.file(rule.path, rule.content)
               }
 
               const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
+              // Determine top-level folder name from zip entries (not file paths, which may have duplicates)
               const zipLoader = new JSZip()
               const loadedZip = await zipLoader.loadAsync(zipBuffer)
               const topLevelFolder = Object.keys(loadedZip.files)[0]?.split('/')[0] || 'project'
               const zipPath = path.join(targetPath, `${topLevelFolder}.zip`)
               const extractPath = path.join(targetPath, topLevelFolder)
 
-              if (!fs.existsSync(targetPath)) {
-                fs.mkdirSync(targetPath, { recursive: true })
-              }
               fs.writeFileSync(zipPath, zipBuffer)
 
               if (!fs.existsSync(extractPath)) {
                 fs.mkdirSync(extractPath, { recursive: true })
               }
 
+              // Extract: use projectName as the top-level folder name
               for (const [filename, file] of Object.entries(loadedZip.files)) {
                 if (!file.dir) {
+                  // Remove the project name from the path to get relative path
                   const relativePath = filename.replace(new RegExp(`^${projectName}/`), '')
-                  if (!relativePath) continue
+                  if (!relativePath) continue // Skip if it's the project folder itself
                   const filePath = path.join(extractPath, relativePath)
                   const fileDir = path.dirname(filePath)
                   if (!fs.existsSync(fileDir)) {
@@ -112,28 +114,31 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
+      '@': path.resolve(process.cwd(), './src')
     }
   },
-  build: {
-    outDir: 'dist',
-    sourcemap: true
-  },
   server: {
-    port: 3002,
+    port: 3003,
     proxy: {
-      '/api/ai': {
-        target: 'https://api.minimaxi.com/v1',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/ai/, ''),
-        headers: {
-          'Authorization': `Bearer ${env.VITE_OPENAI_API_KEY || ''}`
-        }
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
       },
-      '/requirements': {
-        target: 'file:///Users/taopeng/workspace/AI_2026/AI-STEPS-ECONOMIC/v2/references/cursor_files/.cursor',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/requirements/, '')
+      '/health': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
+      },
+      '/rest/v1': {
+        target: 'http://127.0.0.1:54321',
+        changeOrigin: true
+      },
+      '/auth/v1': {
+        target: 'http://127.0.0.1:54321',
+        changeOrigin: true
+      },
+      '/storage/v1': {
+        target: 'http://127.0.0.1:54321',
+        changeOrigin: true
       }
     }
   }

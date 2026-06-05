@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { createLifecycleCore, createAIService, matchStrategyWithAIService, getAllStrategies, getAllIndustries, enhanceStrategyWithAIService } from '../../../packages'
+import LifecycleDashboard from './views/LifecycleDashboard.vue'
 import StrategyViewer from './views/StrategyViewer.vue'
 import DocumentGenerator from './views/DocumentGenerator.vue'
 import { useStrategyStore } from './stores/strategyStore'
+
+const currentView = ref('home')
 
 const lifecycle = createLifecycleCore({ storageKey: 'web-lifecycle' })
 const aiService = createAIService({
@@ -116,8 +119,19 @@ async function testMergeMatch() {
 
 <template>
   <div class="app">
-    <h1>AI Toolkits SDK - Web Assembly</h1>
+    <div class="nav-header">
+      <h1>AI Toolkits SDK - Web Assembly</h1>
+      <div class="nav-links">
+        <el-button @click="currentView = 'home'">首页</el-button>
+        <el-button @click="currentView = 'lifecycle'">生命周期管理</el-button>
+      </div>
+    </div>
 
+    <!-- Lifecycle Dashboard View -->
+    <LifecycleDashboard v-if="currentView === 'lifecycle'" />
+
+    <!-- Home View -->
+    <div v-else>
     <section>
       <h2>Lifecycle Core</h2>
       <p>当前阶段: {{ state.currentStageId }}</p>
@@ -165,12 +179,30 @@ async function testMergeMatch() {
       <p class="desc">输入需求，自动生成策略/立项书/需求文档/架构书/Step/执行路线</p>
       <DocumentGenerator />
     </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .app {
   padding: 20px;
+}
+.nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+.nav-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+.nav-links {
+  display: flex;
+  gap: 10px;
 }
 section {
   margin-bottom: 20px;

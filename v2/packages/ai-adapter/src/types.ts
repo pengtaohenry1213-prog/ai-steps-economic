@@ -2,6 +2,8 @@
  * 标准 AI 响应格式
  * 所有模型返回的数据都会归一化为此格式
  */
+import type { Ref, ComputedRef } from 'vue'
+
 export interface StandardResponse<T = unknown> {
   success: boolean
   data: {
@@ -38,7 +40,7 @@ export type AdapterFn<T = unknown> = (
  * 适配器注册表
  */
 export interface AdapterRegistry {
-  [modelKey: string]: AdapterFn
+  [modelKey: string]: AdapterFn<unknown>
 }
 
 /**
@@ -54,19 +56,21 @@ export interface ParseResult {
  */
 export interface UseAIResponseReturn<T = unknown> {
   /** 标准格式数据 */
-  data: StandardResponse<T> | null
+  data: Ref<StandardResponse<T> | null>
   /** 主要内容（Markdown） */
-  content: string
+  content: ComputedRef<string>
   /** 结构化数据 */
-  structured: T | null
+  structured: ComputedRef<T | null>
   /** 模型名称 */
-  model: string
+  model: ComputedRef<string>
   /** 加载状态 */
-  loading: boolean
+  loading: Ref<boolean>
   /** 错误信息 */
-  error: string | null
+  error: Ref<string | null>
   /** 是否成功 */
-  isSuccess: boolean
+  isSuccess: ComputedRef<boolean>
+  /** 处理耗时 */
+  duration: ComputedRef<number>
   /** 手动格式化方法 */
   normalize: (raw: unknown, model: string, duration?: number) => void
 }

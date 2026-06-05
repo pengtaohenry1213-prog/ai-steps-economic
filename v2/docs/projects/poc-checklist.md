@@ -88,7 +88,7 @@ npm run dev
 
 ## 四、验证清单
 
-### 功能验证
+### Phase 1：立项书（init）验证
 
 | 测试项 | 操作 | 预期结果 | 状态 |
 |--------|------|----------|------|
@@ -96,18 +96,35 @@ npm run dev
 | 策略增强 | 匹配成功后继续 | EnhancedStrategy 返回，包含 phases/modules | ⬜ 待测 |
 | 立项书生成 | 增强成功后继续 | ProposalDocument 返回，所有字段非空 | ⬜ 待测 |
 | ACL 转换 | 立项书生成后 | ProposalContent 所有字段正确映射 | ⬜ 待测 |
-| Supabase 存储 | ACL 转换后 | proposals 表有新记录 | ⬜ 待测 |
+| Supabase 存储 | ACL 转换后 | proposals 表有新记录（init） | ⬜ 待测 |
 | B UI 显示 | 存储成功后 | 立项书标题/background/goals/scope 正确显示 | ⬜ 待测 |
+
+### Phase 2：需求文档（requirement）验证
+
+| 测试项 | 操作 | 预期结果 | 状态 |
+|--------|------|----------|------|
+| 需求文档生成 | 立项阶段完成后，进入需求阶段，点击生成 | RequirementsDocument 返回，所有字段非空 | ⬜ 待测 |
+| ACL 转换 | 需求文档生成后 | toRequirementsContent() 正确调用 | ⬜ 待测 |
+| Supabase 存储 | ACL 转换后 | proposals 表有新记录（requirement） | ⬜ 待测 |
+| B UI 显示 | 存储成功后 | 需求文档标题/功能需求/非功能需求正确显示 | ⬜ 待测 |
+
+### Phase 3：架构文档（architecture）验证
+
+| 测试项 | 操作 | 预期结果 | 状态 |
+|--------|------|----------|------|
+| 架构文档生成 | 需求阶段完成后，进入架构阶段，点击生成 | ArchitectureDocument 返回，所有字段非空 | ⬜ 待测 |
+| ACL 转换 | 架构文档生成后 | toArchitectureContent() 正确调用 | ⬜ 待测 |
+| Supabase 存储 | ACL 转换后 | proposals 表有新记录（architecture） | ⬜ 待测 |
+| B UI 显示 | 存储成功后 | 架构文档标题/techStack/modules 正确显示 | ⬜ 待测 |
 
 ### 数据一致性验证
 
-| 对比项 | 旧路径（A） | 新路径（B→A） | 一致性 |
-|--------|------------|---------------|--------|
-| 立项书标题 | — | — | ⬜ 待测 |
-| background | — | — | ⬜ 待测 |
-| goals | — | — | ⬜ 待测 |
-| scope.P0 | — | — | ⬜ 待测 |
-| humanGate.pmo | — | — | ⬜ 待测 |
+| 对比项 | init | requirement | architecture |
+|--------|------|-------------|---------------|
+| 标题 | ⬜ 待测 | ⬜ 待测 | ⬜ 待测 |
+| background | ⬜ 待测 | ⬜ 待测 | ⬜ 待测 |
+| goals | ⬜ 待测 | ⬜ 待测 | ⬜ 待测 |
+| scope.P0 | ⬜ 待测 | ⬜ 待测 | ⬜ 待测 |
 
 ---
 
@@ -117,6 +134,8 @@ npm run dev
 |----------|----------|----------|
 | 策略匹配无响应 | AI 服务未连接 | 检查 ollamaService / aiService 配置 |
 | 立项书字段缺失 | ACL 转换逻辑不完整 | 检查 proposalAdapter.toProposalContent |
+| 需求文档字段缺失 | ACL 转换逻辑不完整 | 检查 proposalAdapter.toRequirementsContent |
+| 架构文档字段缺失 | ACL 转换逻辑不完整 | 检查 proposalAdapter.toArchitectureContent |
 | Supabase 写入失败 | 权限或网络问题 | 检查 supabaseClient 配置 |
 | B UI 无显示 | 数据未正确传递 | 检查 proposalContent 是否正确填充 |
 
@@ -124,13 +143,13 @@ npm run dev
 
 ## 六、完成后
 
-PoC 执行完成后：
+Phase 1-3 验证完成后：
 
-1. **填充 PoC 报告**：将执行日志填入 `docs/projects/poc-report.md`
+1. **更新 PoC 报告**：将执行日志填入 `docs/projects/poc-report.md`
 2. **确认是否可扩展**：
-   - [ ] 是 → 可作为后续模块（需求文档、架构文档）的模板
+   - [x] 是 → ACL 已支持立项书/需求/架构三个模块
    - [ ] 否 → 记录阻断性问题，重新设计
-3. **进入 W4**：执行 + 复盘 + ADR #002
+3. **可选：继续 UI 层迁移** — 把项目 B 的 LifecycleDashboard 迁移到项目 A
 
 ---
 
@@ -138,8 +157,10 @@ PoC 执行完成后：
 
 | 文档 | 路径 |
 |------|------|
+| W4 执行记录 | `docs/projects/w4-execution-record.md` |
+| ADR #002 | `docs/adr/002-acl-adapter-integration.md` |
+| 个人复盘 | `docs/personal/retro-w1w4.md` |
 | 合并路径设计 | `docs/projects/merge-strangler-path.md` |
-| PoC 报告模板 | `docs/projects/poc-report.md` |
 | W1 现状摸底 | `docs/projects/merge-status.md` |
 | W2 6R 评估 | `docs/projects/merge-6r-evaluation.md` |
 | ADR #001 | `docs/adr/001-merge-direction.md` |

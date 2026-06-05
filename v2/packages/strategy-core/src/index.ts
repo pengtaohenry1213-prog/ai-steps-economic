@@ -54,7 +54,16 @@ export {
   formatPlanAsMarkdown
 } from './services/plan-generation-service'
 
-// Prompts (advanced usage)
+// Adapters (ACL Layer)
+export {
+  toProposalContent,
+  toProposalDocument,
+  toRequirementsContent,
+  toArchitectureContent,
+  formatProposalDocumentAsMarkdown,
+  toProposalContentFromAny,
+  aclToB,
+} from './adapters'
 export {
   buildStrategyMatchingSystemPrompt,
   buildStrategyMatchingUserPrompt,

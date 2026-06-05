@@ -14,7 +14,7 @@ import ollamaRouter from './routes/ollama.js'
 import { testConnection } from './services/ollama.js'
 
 const app = express()
-const PORT = process.env.PORT || 3002
+const PORT = process.env.PORT || 3001
 
 // Middleware
 app.use(cors())

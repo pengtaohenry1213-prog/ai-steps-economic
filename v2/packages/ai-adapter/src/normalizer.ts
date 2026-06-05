@@ -2,7 +2,8 @@
  * 响应归一化核心逻辑
  */
 
-import type { RawResponse, ParseResult } from './types'
+import type { Ref, ComputedRef } from 'vue'
+import type { StandardResponse, RawResponse, ParseResult } from './types'
 
 /**
  * 去除思考标签
@@ -156,7 +157,7 @@ export function createStandardResponse<T = unknown>(
 /**
  * 创建错误响应对象
  */
-export function createErrorResponse(error: string, model = 'unknown') {
+export function createErrorResponse<T = unknown>(error: string, model = 'unknown'): StandardResponse<T> {
   return {
     success: false,
     data: {
