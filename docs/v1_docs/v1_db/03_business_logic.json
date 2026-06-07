@@ -1,0 +1,88 @@
+{
+  "description": "业务逻辑配置 - 版本状态机、公式表达式、特殊指标处理",
+  "versionStateMachine": {
+    "states": [
+      { "status": 0, "name": "草稿", "description": "可编辑，可删除", "allowedActions": ["save", "delete", "submit"] },
+      { "status": 1, "name": "已提交", "description": "已锁定编辑，需管理员退回", "allowedActions": ["view", "unlock", "reject"] },
+      { "status": 2, "name": "已锁定", "description": "完全锁定，仅可查看", "allowedActions": ["view"] }
+    ],
+    "transitions": [
+      { "from": 0, "to": 1, "action": "submit", "trigger": "用户点击「提交」" },
+      { "from": 1, "to": 0, "action": "reject", "trigger": "管理员「退回」" },
+      { "from": 1, "to": 2, "action": "lock", "trigger": "管理员「锁定」" }
+    ]
+  },
+  "formulaExpressionSpec": {
+    "placeholder": "${metricCode-year}",
+    "placeholderExample": "${C10001A0002-2025}",
+    "operators": ["+", "-", "*", "/", "(", ")"],
+    "comparisonOps": ["<", ">", "<=", ">=", "=", "!=", "<>"],
+    "logicalOps": ["AND", "OR", "NOT"],
+    "supportedFunctions": {
+      "arithmetic": ["MAX", "MIN", "ABS", "ROUND", "FLOOR", "CEIL", "DIVIDE", "MULTIPLY", "SUM", "AVG"],
+      "financial": ["NPV", "IRR", "XIRR", "XNPV", "PV", "FV", "PMT", "RATE"],
+      "conditional": ["IF", "IFERROR", "IFNA", "IFS"],
+      "date": ["YEAR", "MONTH", "DAY", "DATE", "DATEDIF"]
+    }
+  },
+  "specialExpressionHandlers": {
+    "lastPeriod-{code}": {
+      "description": "年末值",
+      "example": "lastPeriod-C10001A0002",
+      "returns": "取当前年度最后一个周期的值"
+    },
+    "arrayAllValue-{code}": {
+      "description": "所有周期值数组",
+      "example": "arrayAllValue-C10001A0002",
+      "returns": "[val1, val2, val3, ...]"
+    },
+    "total-{code}": {
+      "description": "所有日期值求和",
+      "example": "total-C10001A0002",
+      "returns": "sum of all values"
+    },
+    "prevPeriodAdd-{code}": {
+      "description": "往期累计(不含当前)",
+      "example": "prevPeriodAdd-C10001A0002",
+      "returns": "sum of val[0..n-1]"
+    },
+    "periodAdd-{code}": {
+      "description": "周期累计(含当前)",
+      "example": "periodAdd-C10001A0002",
+      "returns": "sum of val[0..n]"
+    },
+    "futurePeriodAdd-{code}": {
+      "description": "后期累计(不含当前)",
+      "example": "futurePeriodAdd-C10001A0002",
+      "returns": "sum of val[n+1..end]"
+    },
+    "prev-{code}": {
+      "description": "上期值",
+      "example": "prev-C10001A0002",
+      "returns": "val[n-1]"
+    },
+    "totalYear-{code}": {
+      "description": "年合计",
+      "example": "totalYear-C10001A0002",
+      "returns": "同年所有季度求和"
+    }
+  },
+  "cellStyleRules": {
+    "italicCodes": ["C10001A0004", "C10001B0004"],
+    "absCodes": [],
+    "checkCodes": [],
+    "collapseCodes": []
+  },
+  "gridConfig": {
+    "rowConfig": { "isHover": true, "isCurrent": true, "height": 34, "useKey": true },
+    "editConfig": { "trigger": "click", "mode": "cell", "showIcon": false },
+    "treeConfig": { "rowField": "emmId", "parentField": "parentEmmId", "transform": true, "expandAll": true }
+  },
+  "calculationOrder": [
+    "1. 预计算常量 (periodMonths, periodNumber, arrayAllPeriod)",
+    "2. 全局变量处理器 (global-*)",
+    "3. 特殊表达式处理器 (prefix-{code})",
+    "4. 解析公式 (提取变量 ${...}, 替换为实际值)",
+    "5. 执行计算 (FunctionCore.executeFunction)"
+  ]
+}

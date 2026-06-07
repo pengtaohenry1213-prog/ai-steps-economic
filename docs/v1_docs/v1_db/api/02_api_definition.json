@@ -1,0 +1,311 @@
+{
+  "info": {
+    "title": "经济测算模型系统 API",
+    "version": "1.0.0",
+    "description": "基于 v1 项目源码提取的 API 接口定义"
+  },
+  "servers": [
+    { "url": "http://localhost:3000/api", "description": "Mock服务器" }
+  ],
+  "basePath": "/economodel",
+  "commonHeaders": {
+    "Authorization": "Bearer {token}",
+    "User-Code": "string",
+    "Accept-Language": "zh-CN | en-US"
+  },
+  "responseFormat": {
+    "success": {
+      "code": "200",
+      "message": "success",
+      "data": {}
+    },
+    "error": {
+      "code": ">= 400",
+      "message": "error message",
+      "data": null
+    }
+  },
+  "endpoints": {
+    "auth": {
+      "login": {
+        "method": "POST",
+        "path": "/auth/login",
+        "request": { "username": "string", "password": "string" },
+        "response": { "accessToken": "string", "refreshToken": "string", "userInfo": {} }
+      },
+      "refreshToken": {
+        "method": "POST",
+        "path": "/auth/refresh",
+        "request": { "refreshToken": "string" },
+        "response": { "accessToken": "string" }
+      }
+    },
+    "datamodel": {
+      "getModelList": {
+        "method": "POST",
+        "path": "/datamodel/page",
+        "request": { "modelName": "string", "modelType": "string", "pageNum": 1, "pageSize": 10 },
+        "response": { "list": [], "total": 0, "pageNum": 1, "pageSize": 10 }
+      },
+      "getModelDetail": {
+        "method": "GET",
+        "path": "/datamodel/{modelCode}",
+        "response": { "modelCode": "string", "modelName": "string", "modelType": "string", "config": {}, "forecastTimeType": "string" }
+      },
+      "createModel": {
+        "method": "POST",
+        "path": "/datamodel/create",
+        "request": { "modelName": "string", "modelType": "string", "config": {}, "forecastTimeType": "string", "currencyCode": "string", "investCompanyCode": "string", "projectCode": "string" },
+        "response": { "modelCode": "string" }
+      },
+      "saveModel": {
+        "method": "POST",
+        "path": "/datamodel/save",
+        "request": { "modelCode": "string", "modelName": "string", "config": {}, "forecastTimeType": "string" },
+        "response": { "success": true }
+      },
+      "deleteModel": {
+        "method": "POST",
+        "path": "/datamodel/delete",
+        "request": { "modelCode": "string" },
+        "response": { "success": true }
+      },
+      "getCurrencyList": {
+        "method": "POST",
+        "path": "/currencydictionary/list",
+        "request": {},
+        "response": [{ "currencyCode": "string", "currencyName": "string", "currencySymbol": "string", "exchangeRate": 0 }]
+      },
+      "getInvestList": {
+        "method": "GET",
+        "path": "/investsystem/projectbase/findAllByProfCompy",
+        "response": [{ "companyCode": "string", "companyName": "string" }]
+      },
+      "getProjectList": {
+        "method": "GET",
+        "path": "/investsystem/projectbase/findAllByProject",
+        "response": [{ "projectCode": "string", "projectName": "string" }]
+      },
+      "getUnitAndCategorylist": {
+        "method": "POST",
+        "path": "/unitcategory/unitAndCategorylist",
+        "request": {},
+        "response": [{ "unitCode": "string", "unitName": "string", "unitType": "string" }]
+      }
+    },
+    "datamodelversion": {
+      "getInstanceList": {
+        "method": "POST",
+        "path": "/datamodelversion/page",
+        "request": { "modelCode": "string", "versionName": "string", "status": 0, "pageNum": 1, "pageSize": 10 },
+        "response": { "list": [], "total": 0 }
+      },
+      "getInstance": {
+        "method": "POST",
+        "path": "/datamodelversion/list",
+        "request": { "modelCode": "string" },
+        "response": [{ "versionCode": "string", "versionName": "string", "status": 0, "isLocked": 0 }]
+      },
+      "getInstanceDetail": {
+        "method": "GET",
+        "path": "/datamodelversion/{versionCode}",
+        "response": { "versionCode": "string", "modelCode": "string", "versionName": "string", "status": 0, "isLocked": 0, "forecastTimeRange": {}, "versionConfig": {} }
+      },
+      "saveInstanceConfig": {
+        "method": "PUT",
+        "path": "/datamodelversion/save",
+        "request": { "versionCode": "string", "versionName": "string", "versionConfig": {} },
+        "response": { "success": true }
+      },
+      "updateInstanceConfig": {
+        "method": "PUT",
+        "path": "/datamodelversion/saveOrUpdate",
+        "request": { "modelCode": "string", "versionCode": "string", "versionName": "string", "forecastTimeRange": {}, "versionConfig": {} },
+        "response": { "success": true }
+      },
+      "deleteInstance": {
+        "method": "POST",
+        "path": "/datamodelversion/removeAll",
+        "request": { "versionCodes": ["string"] },
+        "response": { "success": true }
+      },
+      "submitInstance": {
+        "method": "POST",
+        "path": "/datamodelversion/submit",
+        "request": { "versionCode": "string" },
+        "response": { "success": true }
+      },
+      "lockInstance": {
+        "method": "POST",
+        "path": "/datamodelversion/lock",
+        "request": { "versionCode": "string" },
+        "response": { "success": true }
+      },
+      "unlockInstance": {
+        "method": "POST",
+        "path": "/datamodelversion/unlock",
+        "request": { "versionCode": "string" },
+        "response": { "success": true }
+      },
+      "checkEditLock": {
+        "method": "GET",
+        "path": "/data/{dataId}/lock-status",
+        "response": { "locked": false, "lockUser": "string", "lockTime": "string" }
+      },
+      "setEditLock": {
+        "method": "POST",
+        "path": "/data/{dataId}/lock",
+        "request": { "userCode": "string" },
+        "response": { "success": true }
+      },
+      "setUnLock": {
+        "method": "POST",
+        "path": "/data/{dataId}/unlock",
+        "request": { "userCode": "string" },
+        "response": { "success": true }
+      }
+    },
+    "modelpage": {
+      "getModelMenu": {
+        "method": "POST",
+        "path": "/modelpages/list",
+        "request": { "versionCode": "string" },
+        "response": [{ "pageCode": "string", "pageName": "string", "interfaceType": "string", "sortOrder": 0 }]
+      },
+      "savePage": {
+        "method": "POST",
+        "path": "/modelpages/save",
+        "request": { "pageCode": "string", "versionCode": "string", "pageName": "string", "interfaceType": "string", "sortOrder": 0 },
+        "response": { "success": true }
+      }
+    },
+    "modelmetric": {
+      "getModelTemplate": {
+        "method": "POST",
+        "path": "/modelmetric/list",
+        "request": { "versionCode": "string", "pageCode": "string" },
+        "response": [{ "metricCode": "string", "metricName": "string", "unitCode": "string", "isFixed": 0, "level": 0, "parentEmmId": "string", "metricType": "string", "formulaExpression": "string" }]
+      },
+      "getModelmetricPage": {
+        "method": "POST",
+        "path": "/modelmetric/page",
+        "request": { "versionCode": "string", "pageCode": "string", "pageNum": 1, "pageSize": 100 },
+        "response": { "list": [], "total": 0 }
+      },
+      "saveModelmetric": {
+        "method": "POST",
+        "path": "/modelmetric/save",
+        "request": { "metricCode": "string", "versionCode": "string", "pageCode": "string", "metricName": "string", "unitCode": "string", "isFixed": 0, "level": 0, "parentEmmId": "string", "metricType": "string", "formulaExpression": "string" },
+        "response": { "success": true }
+      },
+      "removeModelmetric": {
+        "method": "POST",
+        "path": "/modelmetric/remove",
+        "request": { "metricCode": "string" },
+        "response": { "success": true }
+      },
+      "batchSaveModelmetric": {
+        "method": "POST",
+        "path": "/modelmetric/batchSave",
+        "request": { "versionCode": "string", "pageCode": "string", "metrics": [] },
+        "response": { "success": true }
+      }
+    },
+    "dataentry": {
+      "getInstanceData": {
+        "method": "GET",
+        "path": "/dataentry/getModelTableData",
+        "request": { "versionCode": "string", "pageCode": "string" },
+        "response": { "headers": [], "rows": [], "formattedValues": {} }
+      },
+      "saveAll": {
+        "method": "PUT",
+        "path": "/dataentry/saveAll",
+        "request": { "versionCode": "string", "changes": [{ "metricCode": "string", "reportYear": 2025, "reportQuarter": 0, "value": 0 }] },
+        "response": { "success": true, "savedCount": 0 }
+      },
+      "batchSaveDataentry": {
+        "method": "POST",
+        "path": "/dataentry/batchSave",
+        "request": { "versionCode": "string", "data": [] },
+        "response": { "success": true }
+      },
+      "importExcel": {
+        "method": "POST",
+        "path": "/dataentry/importExcel",
+        "request": { "versionCode": "string", "file": "binary" },
+        "response": { "success": true, "importedCount": 0, "errors": [] }
+      },
+      "exportExcel": {
+        "method": "POST",
+        "path": "/dataentry/exportExcel",
+        "request": { "versionCode": "string", "pageCode": "string", "includeVerified": true },
+        "response": { "fileUrl": "string" }
+      }
+    },
+    "modelformula": {
+      "getScriptFormula": {
+        "method": "GET",
+        "path": "/modelformula/getAllLuaString",
+        "request": { "versionCode": "string" },
+        "response": [{ "metricCode": "string", "formulaExpression": "string", "luaScript": "string" }]
+      },
+      "getFormulaList": {
+        "method": "POST",
+        "path": "/modelformula/list",
+        "request": { "versionCode": "string" },
+        "response": [{ "formulaId": "string", "metricCode": "string", "formulaExpression": "string", "formulaName": "string", "depends": [], "status": 1 }]
+      },
+      "getFormulaPage": {
+        "method": "POST",
+        "path": "/modelformula/page",
+        "request": { "versionCode": "string", "pageNum": 1, "pageSize": 100 },
+        "response": { "list": [], "total": 0 }
+      },
+      "saveFormula": {
+        "method": "POST",
+        "path": "/modelformula/save",
+        "request": { "formulaId": "string", "metricCode": "string", "formulaExpression": "string", "formulaName": "string", "description": "string" },
+        "response": { "success": true }
+      },
+      "removeFormula": {
+        "method": "POST",
+        "path": "/modelformula/remove",
+        "request": { "formulaId": "string" },
+        "response": { "success": true }
+      },
+      "calcMetricsImpacted": {
+        "method": "POST",
+        "path": "/modelformula/fetchMetricsImpactedByValue",
+        "request": { "versionCode": "string", "changedMetricCode": "string", "changedValue": 0 },
+        "response": { "impactedMetrics": [{ "metricCode": "string", "oldValue": 0, "newValue": 0 }] }
+      }
+    }
+  },
+  "formulaExpressionFormat": {
+    "placeholder": "${metricCode-year}",
+    "examples": [
+      "${C10001A0002-2025} + ${C10001A0003-2025}",
+      "MAX(${C10001A0002} - ${C10001A0003}, 0)",
+      "lastPeriod-C10001A0002",
+      "arrayAllValue-C10001A0002"
+    ],
+    "specialHandlers": {
+      "lastPeriod-{code}": "年末值",
+      "arrayAllValue-{code}": "所有周期值数组",
+      "total-{code}": "所有日期值数组",
+      "prevPeriodAdd-{code}": "往期累计(不含当前)",
+      "periodAdd-{code}": "周期累计(含当前)",
+      "futurePeriodAdd-{code}": "后期累计(不含当前)",
+      "prev-{code}": "上期值",
+      "totalYear-{code}": "年合计"
+    }
+  },
+  "statusEnum": {
+    "versionStatus": { "0": "草稿", "1": "已提交", "2": "已锁定" },
+    "isLocked": { "0": "未锁定", "1": "已锁定" },
+    "isFixed": { "0": "非固定值", "1": "固定值(单一值)" },
+    "isVerified": { "0": "未审核", "1": "已审核" },
+    "metricType": { "input": "录入", "formula": "公式", "reference": "引用" }
+  }
+}

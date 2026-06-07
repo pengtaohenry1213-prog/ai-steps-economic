@@ -4,6 +4,10 @@ import { createLifecycleCore, createAIService, matchStrategyWithAIService, getAl
 import LifecycleDashboard from './views/LifecycleDashboard.vue'
 import StrategyViewer from './views/StrategyViewer.vue'
 import DocumentGenerator from './views/DocumentGenerator.vue'
+import Week1MvtDemo from './views/mvt/week1-vxe-hf-binding/index.vue'
+import Week2MvtDemo from './views/mvt/week2-formula-conversion/index.vue'
+import Week3MvtDemo from './views/mvt/week3-financial-functions/index.vue'
+import V1EditPage from './views/mvt/v1-edit-page/index.vue'
 import { useStrategyStore } from './stores/strategyStore'
 
 const currentView = ref('home')
@@ -124,11 +128,27 @@ async function testMergeMatch() {
       <div class="nav-links">
         <el-button @click="currentView = 'home'">首页</el-button>
         <el-button @click="currentView = 'lifecycle'">生命周期管理</el-button>
+        <el-button type="success" @click="currentView = 'mvt'">MVT Week1</el-button>
+        <el-button type="primary" @click="currentView = 'mvt2'">MVT Week2</el-button>
+        <el-button type="warning" @click="currentView = 'mvt3'">MVT Week3</el-button>
+        <el-button type="danger" @click="currentView = 'v1edit'">V1页面迁移</el-button>
       </div>
     </div>
 
     <!-- Lifecycle Dashboard View -->
     <LifecycleDashboard v-if="currentView === 'lifecycle'" />
+
+    <!-- MVT Week1 Demo View -->
+    <Week1MvtDemo v-if="currentView === 'mvt'" />
+
+    <!-- MVT Week2 Demo View -->
+    <Week2MvtDemo v-if="currentView === 'mvt2'" />
+
+    <!-- MVT Week3 Demo View -->
+    <Week3MvtDemo v-if="currentView === 'mvt3'" />
+
+    <!-- V1 Edit Page Migration -->
+    <V1EditPage v-if="currentView === 'v1edit'" />
 
     <!-- Home View -->
     <div v-else>

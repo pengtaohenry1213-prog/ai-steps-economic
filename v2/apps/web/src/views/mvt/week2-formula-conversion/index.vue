@@ -1,0 +1,129 @@
+<script setup lang="ts">
+/**
+ * Week2 Demo入口 - v1 公式转换验证
+ *
+ * 本目录包含 Week2 的核心验证:
+ * - FormulaConverter.vue - 公式转换核心逻辑
+ * - samples.ts - 10个公式样本
+ */
+
+import { ref, defineAsyncComponent } from 'vue'
+
+const activeView = ref<'converter'>('converter')
+
+// Demo 组件动态导入
+const demos = {
+  converter: defineAsyncComponent(() => import('./FormulaConverter.vue'))
+}
+</script>
+
+<template>
+  <div class="week2-mvt">
+    <div class="header">
+      <h1>MVT Week2 - v1 公式样本转换验证</h1>
+      <p class="subtitle">验证目标：v1 ${metricCode} 格式 → HyperFormula A1 单元格引用格式</p>
+    </div>
+
+    <div class="demo-tabs">
+      <button
+        :class="{ active: activeView === 'converter' }"
+        @click="activeView = 'converter'"
+      >
+        公式转换验证 ⭐核心
+      </button>
+    </div>
+
+    <div class="demo-content">
+      <component :is="demos[activeView]" />
+    </div>
+
+    <div class="footer">
+      <h3>MVT/v1/week2 产出</h3>
+      <ul>
+        <li>✅ FormulaConverter.vue - 公式转换核心组件</li>
+        <li>✅ samples.ts - 10个 v1 典型公式样本</li>
+        <li>✅ convertV1Formula() - 转换函数实现</li>
+        <li>✅ buildCodeToCellMapping() - 映射表构建函数</li>
+      </ul>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.week2-mvt {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.header h1 {
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.subtitle {
+  color: #666;
+}
+
+.demo-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e4e7ed;
+  padding-bottom: 10px;
+}
+
+.demo-tabs button {
+  padding: 10px 20px;
+  border: none;
+  background: #f5f7fa;
+  color: #606266;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.demo-tabs button:hover {
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.demo-tabs button.active {
+  background: #409eff;
+  color: white;
+}
+
+.demo-content {
+  background: white;
+  padding: 20px;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+}
+
+.footer {
+  margin-top: 30px;
+  padding: 20px;
+  background: #f5f7fa;
+  border-radius: 4px;
+}
+
+.footer h3 {
+  margin-bottom: 10px;
+}
+
+.footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer li {
+  padding: 5px 0;
+  color: #67c23a;
+}
+</style>
