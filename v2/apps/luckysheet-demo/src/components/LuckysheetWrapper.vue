@@ -119,9 +119,9 @@ function initLuckysheet() {
         name: 'Sheet1',
         celldata: [
           { r: 0, c: 0, v: { v: '欢迎使用 Luckysheet', f: null } },
-          { r: 0, c: 1, v: { v: 100, f: null } },
-          { r: 1, c: 0, v: { v: 200, f: null } },
-          { r: 1, c: 1, v: { v: '=A1+B1', f: '=A1+B1' } }
+          { r: 0, c: 1, v: { v: 100, m: '100', f: null } },
+          { r: 1, c: 0, v: { v: 200, m: '200', f: null } },
+          { r: 1, c: 1, v: { v: '=A1+B1', m: '=A1+B1', f: '=A1+B1' } }
         ],
         row: 100,
         column: 20

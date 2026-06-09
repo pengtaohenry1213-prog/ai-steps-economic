@@ -16,7 +16,8 @@ export default defineConfig({
     sourcemap: true
   },
   server: {
-    port: 3003,
+    host: '0.0.0.0',
+    port: 3008,
     proxy: {
       '/api/ai': {
         target: 'https://api.minimaxi.com/v1',

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:loop": "tsx scripts/test-loop.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
@@ -28,11 +29,14 @@
     "yjs": "^13.6.31"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.40.1",
     "@playwright/test": "^1.49.0",
     "@types/jquery": "^4.0.1",
     "@types/node": "^20.0.0",
     "@vitejs/plugin-vue": "^5.2.0",
+    "chokidar": "^4.0.3",
     "sass-embedded": "^1.100.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.3.0",
     "vite": "^6.0.0",
     "vitest": "^2.1.0",

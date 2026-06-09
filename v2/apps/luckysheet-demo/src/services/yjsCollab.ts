@@ -15,6 +15,16 @@ export interface CollabUser {
 
 const ROOM_NAME = 'luckysheet-mvtp-v1'
 
+// Signaling server 地址：运行时使用当前访问的 hostname（支持跨设备协作）
+// Device A 访问 localhost:3008 → ws://localhost:4444
+// Device B 访问 192.168.1.69:3008 → ws://192.168.1.69:4444
+// 固定端口 4444
+const SIGNALING_PORT = '4444'
+function getSignalingUrl(): string {
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+  return `ws://${host}:${SIGNALING_PORT}`
+}
+
 export class YjsCollabService {
   private doc: Y.Doc
   private provider: WebrtcProvider | null = null
@@ -44,10 +54,14 @@ export class YjsCollabService {
 
     console.log('[Yjs] connect(), doc id:', this.doc.clientID, 'room:', ROOM_NAME)
 
+    const signalingUrl = getSignalingUrl()
+    console.log('[Yjs] signaling URL:', signalingUrl)
+
     // y-webrtc 通过 BroadcastChannel 发现同设备标签页
     // 通过 signaling 服务器（Docker 部署）发现跨设备 peer
+    // signaling URL 运行时动态获取（根据当前访问的 hostname）
     this.provider = new WebrtcProvider(ROOM_NAME, this.doc, {
-      signaling: ['ws://localhost:4444'],
+      signaling: [signalingUrl],
       maxConns: 10
     })
 
