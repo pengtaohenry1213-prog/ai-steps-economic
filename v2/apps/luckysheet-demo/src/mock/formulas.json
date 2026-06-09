@@ -1,0 +1,125 @@
+{
+  "datamodelVersion": {
+    "opTime": "2025-04-23 09:33:32",
+    "id": "01jsg4eqj2tj5a2kags6z81n4b",
+    "versionName": "totalYear-测试-项目周期-月度",
+    "versionCode": "288F978E70AB4512B2248BD2A31DC8DE",
+    "currencyCode": "CNY",
+    "forecastTimeType": "month",
+    "forecastTimeRange": "2025-4,2044-8",
+    "modelCode": "34a1b9ab-f5b4-40e4-b152-8e813685b800",
+    "investmentSubject": "01",
+    "projectCode": "DB0120250001",
+    "projectName": "2026中粮集团有限公司改建打包项目",
+    "modelType": "完整模型",
+    "investmentType": "固定资产类-新增产能",
+    "investmentName": "中粮集团有限公司",
+    "status": 0,
+    "isLocked": null,
+    "delFlag": 0
+  },
+
+  "formulaMap": {
+    "F300003100009999999-2025": {
+      "id": "F300003100009999999-2025",
+      "metricCode": "F300003100009999999",
+      "field": "2025",
+      "formula": "${periodAdd-F300008100009999999}+${periodAdd-F300011100009999999}+${periodAdd-F300014100009999999}",
+      "formulaName": "单吨生产成本（不含税）-2025",
+      "marks": [
+        { "deCode": "${periodAdd-F300008100009999999}", "enCode": "periodAdd-F300008100009999999", "from": 0, "to": 32 },
+        { "deCode": "${periodAdd-F300011100009999999}", "enCode": "periodAdd-F300011100009999999", "from": 33, "to": 65 },
+        { "deCode": "${periodAdd-F300014100009999999}", "enCode": "periodAdd-F300014100009999999", "from": 66, "to": 98 }
+      ],
+      "calcMarks": [
+        "F300008100009999999-2025",
+        "F300011100009999999-2025",
+        "F300014100009999999-2025"
+      ],
+      "children": [],
+      "parent": []
+    },
+    "F300008100009999999-2025": {
+      "id": "F300008100009999999-2025",
+      "metricCode": "F300008100009999999",
+      "field": "2025",
+      "formula": "=${F_MAIN_QTY}*${F_MAIN_PRICE}",
+      "formulaName": "主料成本-2025",
+      "marks": [
+        { "deCode": "${F_MAIN_QTY}", "enCode": "F_MAIN_QTY", "from": 1, "to": 14 },
+        { "deCode": "${F_MAIN_PRICE}", "enCode": "F_MAIN_PRICE", "from": 15, "to": 30 }
+      ],
+      "calcMarks": ["F_MAIN_QTY-2025", "F_MAIN_PRICE-2025"],
+      "children": [],
+      "parent": ["F300003100009999999-2025"]
+    },
+    "F300011100009999999-2025": {
+      "id": "F300011100009999999-2025",
+      "metricCode": "F300011100009999999",
+      "field": "2025",
+      "formula": "=${F_AUX_QTY}*${F_AUX_PRICE}",
+      "formulaName": "辅料成本-2025",
+      "marks": [
+        { "deCode": "${F_AUX_QTY}", "enCode": "F_AUX_QTY", "from": 1, "to": 12 },
+        { "deCode": "${F_AUX_PRICE}", "enCode": "F_AUX_PRICE", "from": 13, "to": 27 }
+      ],
+      "calcMarks": ["F_AUX_QTY-2025", "F_AUX_PRICE-2025"],
+      "children": [],
+      "parent": ["F300003100009999999-2025"]
+    },
+    "F300014100009999999-2025": {
+      "id": "F300014100009999999-2025",
+      "metricCode": "F300014100009999999",
+      "field": "2025",
+      "formula": "=${F_PACK_QTY}*${F_PACK_PRICE}",
+      "formulaName": "包材成本-2025",
+      "marks": [
+        { "deCode": "${F_PACK_QTY}", "enCode": "F_PACK_QTY", "from": 1, "to": 13 },
+        { "deCode": "${F_PACK_PRICE}", "enCode": "F_PACK_PRICE", "from": 14, "to": 29 }
+      ],
+      "calcMarks": ["F_PACK_QTY-2025", "F_PACK_PRICE-2025"],
+      "children": [],
+      "parent": ["F300003100009999999-2025"]
+    },
+    "C10000A0382-2025": {
+      "id": "C10000A0382-2025",
+      "metricCode": "C10000A0382",
+      "field": "2025",
+      "formula": "-${C10000A0480}",
+      "formulaName": "盈余公积-2025",
+      "marks": [
+        { "deCode": "${C10000A0480}", "enCode": "C10000A0480", "from": 1, "to": 17 }
+      ],
+      "calcMarks": ["C10000A0480-2025"],
+      "children": [],
+      "parent": []
+    },
+    "F_FINAL_PRICE-2025": {
+      "id": "F_FINAL_PRICE-2025",
+      "metricCode": "F_FINAL_PRICE",
+      "field": "2025",
+      "formula": "=${F_TOTAL_COST}*(1-${F_DISCOUNT})",
+      "formulaName": "最终报价（折扣价）-2025",
+      "marks": [
+        { "deCode": "${F_TOTAL_COST}", "enCode": "F_TOTAL_COST", "from": 1, "to": 16 },
+        { "deCode": "${F_DISCOUNT}", "enCode": "F_DISCOUNT", "from": 19, "to": 32 }
+      ],
+      "calcMarks": ["F_TOTAL_COST-2025", "F_DISCOUNT-2025"],
+      "children": [],
+      "parent": []
+    },
+    "Q10000A0044-2025": {
+      "id": "Q10000A0044-2025",
+      "metricCode": "Q10000A0044",
+      "field": "2025",
+      "formula": "IRR(${arrayAllValue-Q10000A0002})",
+      "formulaName": "项目IRR-2025",
+      "marks": [
+        { "deCode": "${arrayAllValue-Q10000A0002}", "enCode": "arrayAllValue-Q10000A0002", "from": 4, "to": 33 }
+      ],
+      "calcMarks": ["Q10000A0002-2025", "Q10000A0002-2026", "Q10000A0002-2027"],
+      "children": [],
+      "parent": []
+    }
+  }
+}

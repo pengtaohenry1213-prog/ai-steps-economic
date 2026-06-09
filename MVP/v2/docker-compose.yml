@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  y-webrtc-signaling:
+    image: node:20-alpine
+    container_name: y-webrtc-signaling
+    working_dir: /app
+    command: sh -c "npm install -g y-webrtc && npx y-webrtc --port 4444"
+    ports:
+      - "4444:4444"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4444"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
